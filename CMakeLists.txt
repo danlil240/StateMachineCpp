@@ -10,18 +10,14 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# Modular library with source files
-add_library(StateMachineLib 
-    src/StateMachine.cpp
-    src/StateMachineConfig.cpp
-    src/StateMachineLogger.cpp
-)
+# Header-only library (since we converted to templates)
+add_library(StateMachineLib INTERFACE)
 
 # Set C++17 standard for the library
-target_compile_features(StateMachineLib PUBLIC cxx_std_17)
+target_compile_features(StateMachineLib INTERFACE cxx_std_17)
 
 target_include_directories(StateMachineLib
-    PUBLIC
+    INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
 )
