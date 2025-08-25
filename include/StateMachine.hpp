@@ -45,6 +45,7 @@ private:
     std::unordered_map<StateID, StateInfo> states;
     std::atomic<StateID> currentStateId;
     std::atomic<bool> isInitialized{false};
+    std::atomic<uint64_t> stateVersion{0}; // Incremented on each state change
 
     // Configuration
     std::unique_ptr<StateMachineConfig<StateID>> config;
@@ -52,24 +53,76 @@ private:
     // History tracking
     std::vector<StateID> stateHistory;
 
-    // Thread safety
-    mutable std::mutex stateMutex;
+    // Transition queuing system
+    struct PendingTransition
+    {
+        StateID targetStateId;
+        std::string reason;
+        PendingTransition(const StateID &id, std::string_view r) : targetStateId(id), reason(r) {}
+    };
+    std::vector<PendingTransition> pendingTransitions;
+    std::atomic<bool> updateInProgress{false};
+    std::atomic<bool> updateShouldCancel{false}; // Signal to cancel ongoing update
+
+    // Thread safety - hierarchical locking to prevent deadlocks
+    // Lock order: statesMutex -> currentStateMutex -> historyMutex -> configMutex
+    mutable std::mutex statesMutex;          // Protects states map (Level 1)
+    mutable std::mutex currentStateMutex;    // Protects currentStateId (Level 2)
+    mutable std::mutex historyMutex;         // Protects stateHistory (Level 3)
+    mutable std::mutex configMutex;          // Protects config operations (Level 4)
+    mutable std::mutex updateMutex;          // Protects update execution (Independent)
+    mutable std::mutex transitionQueueMutex; // Protects pendingTransitions (Independent)
+
+    // RAII guard for safe state access outside locks
+    struct StateGuard
+    {
+        std::shared_ptr<State> state;
+        StateID stateId;
+        std::string stateName;
+
+        StateGuard(std::shared_ptr<State> s, StateID id, std::string name)
+            : state(std::move(s)), stateId(id), stateName(std::move(name))
+        {
+        }
+
+        State* get() const { return state.get(); }
+        State* operator->() const { return state.get(); }
+        State &operator*() const { return *state; }
+        explicit operator bool() const { return state != nullptr; }
+    };
+
+    // Get a safe state guard for any state by ID
+    StateGuard getStateGuard(const StateID &stateId) const
+    {
+        std::lock_guard<std::mutex> lock(statesMutex);
+        auto it = states.find(stateId);
+        if (it != states.end())
+        {
+            return StateGuard(it->second.state, stateId, it->second.name);
+        }
+        return StateGuard(nullptr, StateID{}, "");
+    }
 
     // Private helper methods (implemented inline for template)
-    void log(LogLevel level, std::string_view color, std::string_view message) const
+    void log(LogLevel level, std::string_view message) const
     {
+        // Config access is safe - config is immutable after construction
+        // and logger/logLevel are thread-safe to read
         if (auto* logger = config->getLogger(); logger && StateMachineLogger::shouldLog(config->getLogLevel(), level))
         {
-            logger->log(level, color, config->getMachineName(), message);
+            logger->log(level, config->getMachineName(), message);
         }
     }
 
     void addToHistory(const StateID &stateId)
     {
+        // Note: This method should only be called when historyMutex is already held
+        // to maintain lock hierarchy and prevent races
         if (stateHistory.empty() || stateHistory.back() != stateId)
         {
             stateHistory.push_back(stateId);
         }
+        // Safe config access - config is immutable after construction
         if (stateHistory.size() > config->getMaxHistorySize())
         {
             stateHistory.erase(stateHistory.begin());
@@ -78,16 +131,27 @@ private:
 
     bool handleTransitionFailure(const StateID &failedState, std::string_view reason)
     {
+        // Config access is thread-safe for reads after construction
         const auto& fallbackStateId = config->getFallbackStateId();
         if (fallbackStateId.has_value() && fallbackStateId.value() != failedState)
         {
-            log(LogLevel::WARN, StateMachineLogger::YELLOW,
-                std::string("State transition failed, falling back: ") + std::string(reason));
-            return changeStateInternal(fallbackStateId.value(), "Fallback after failure");
+            log(LogLevel::WARN, std::string("State transition failed, falling back: ") + std::string(reason));
+
+            // Check if we're in an update cycle - if so, queue it; otherwise execute immediately
+            if (updateInProgress.load())
+            {
+                queueTransition(fallbackStateId.value(), "Fallback after failure", true); // Cancel update for fallback
+                return true;                                                              // Will be processed later
+            }
+            else
+            {
+                // Execute fallback immediately
+                return changeStateInternal(fallbackStateId.value(), "Fallback after failure");
+            }
         }
 
-        log(LogLevel::ERROR, StateMachineLogger::RED,
-            std::string("State transition failed with no fallback: ") + std::string(reason));
+        log(LogLevel::ERROR, std::string("State transition failed with no fallback: ") + std::string(reason));
+        // Config access is thread-safe for reads after construction
         if (auto cb = config->getErrorCallback(); cb)
         {
             cb(reason, currentStateId.load());
@@ -95,20 +159,61 @@ private:
         return false;
     }
 
+    void queueTransition(const StateID &stateId, std::string_view reason, bool cancelUpdate = false)
+    {
+        std::lock_guard<std::mutex> lock(transitionQueueMutex);
+        pendingTransitions.emplace_back(stateId, reason);
+
+        if (cancelUpdate)
+        {
+            updateShouldCancel.store(true); // Signal running update to cancel
+            log(LogLevel::DEBUG, std::string("Queued transition to state (cancelling update): ") + std::string(reason));
+        }
+        else
+        {
+            log(LogLevel::DEBUG,
+                std::string("Queued transition to state (waiting for update): ") + std::string(reason));
+        }
+    }
+
+    void processPendingTransitions()
+    {
+        std::vector<PendingTransition> transitionsToProcess;
+
+        // Move pending transitions to local vector
+        {
+            std::lock_guard<std::mutex> lock(transitionQueueMutex);
+            if (pendingTransitions.empty())
+            {
+                return;
+            }
+            transitionsToProcess = std::move(pendingTransitions);
+            pendingTransitions.clear();
+        }
+
+        // Process transitions outside of the queue lock
+        for (const auto &transition : transitionsToProcess)
+        {
+            log(LogLevel::DEBUG, std::string("Processing queued transition: ") + transition.reason);
+            changeStateInternal(transition.targetStateId, transition.reason);
+            // Only process the first valid transition to avoid cascading changes
+            break;
+        }
+    }
+
     bool changeStateInternal(const StateID &newStateId, std::string_view reason)
     {
-        State* oldState = nullptr;
-        State* newState = nullptr;
+        StateGuard oldStateGuard(nullptr, StateID{}, "");
+        StateGuard newStateGuard(nullptr, StateID{}, "");
         StateID oldStateId;
-        std::string oldStateName, newStateName;
         StateChangeCallback stateChangeCb; // local copies of callbacks
 
         {
-            std::lock_guard<std::mutex> lock(stateMutex);
+            std::lock_guard<std::mutex> lock(statesMutex);
 
             if (!isInitialized.load())
             {
-                log(LogLevel::WARN, StateMachineLogger::YELLOW, "Attempted state change before initialization");
+                log(LogLevel::WARN, "Attempted state change before initialization");
                 return false;
             }
 
@@ -117,25 +222,23 @@ private:
 
             if (oldStateIter == states.end() || newStateIter == states.end())
             {
-                log(LogLevel::ERROR, StateMachineLogger::RED, "State transition between invalid states");
+                log(LogLevel::ERROR, "State transition between invalid states");
                 return false;
             }
 
             // No need to change to the same state
             if (currentStateId.load() == newStateId)
             {
-                log(LogLevel::DEBUG, StateMachineLogger::CYAN, "Ignored transition to same state");
+                log(LogLevel::DEBUG, "Ignored transition to same state");
                 return true;
             }
 
-            // Prepare info for outside use
-            oldState = oldStateIter->second.state.get();
-            newState = newStateIter->second.state.get();
+            // Create safe state guards
             oldStateId = currentStateId.load();
-            oldStateName = oldStateIter->second.name;
-            newStateName = newStateIter->second.name;
+            oldStateGuard = StateGuard(oldStateIter->second.state, oldStateId, oldStateIter->second.name);
+            newStateGuard = StateGuard(newStateIter->second.state, newStateId, newStateIter->second.name);
 
-            // Copy callback to local variable
+            // Copy callback to local variable (config is thread-safe for reads after construction)
             stateChangeCb = config->getStateChangeCallback();
         }
 
@@ -143,32 +246,36 @@ private:
 
         // Log state change
         std::string reasonText = reason.empty() ? "" : std::string("\t(Reason: ") + std::string(reason) + ")";
-        log(LogLevel::INFO, StateMachineLogger::BLUE,
-            "|" + std::string(StateMachineLogger::STRIKETHROUGH) + oldStateName + 
-            std::string(StateMachineLogger::RESET) + std::string(StateMachineLogger::BOLD) +
-            std::string(StateMachineLogger::BLUE) + "| ➔ |" + newStateName + "|" + reasonText);
+        log(LogLevel::INFO, "|" + std::string(StateMachineLogger::STRIKETHROUGH) + oldStateGuard.stateName +
+                                std::string(StateMachineLogger::RESET) + std::string(StateMachineLogger::BOLD) +
+                                std::string(StateMachineLogger::BLUE) + "| ➔ |" + newStateGuard.stateName + "|" +
+                                reasonText);
 
-        // Exit old state
+        // Exit old state using safe guard
         try
         {
-            if (oldState)
-                oldState->exit();
+            if (oldStateGuard)
+                oldStateGuard->exit();
         }
         catch (const std::exception& e)
         {
-            log(LogLevel::ERROR, StateMachineLogger::RED, std::string("Exception in state exit: ") + e.what());
+            log(LogLevel::ERROR, std::string("Exception in state exit: ") + e.what());
         }
 
-        // Enter new state
+        // Enter new state using safe guard
         bool enterSuccess = true;
         try
         {
-            if (newState)
-                enterSuccess = newState->enter();
+            if (newStateGuard)
+            {
+                // Set the state ID so the state knows which state it represents
+                newStateGuard->myStateId = newStateId;
+                enterSuccess = newStateGuard->enter();
+            }
         }
         catch (const std::exception& e)
         {
-            log(LogLevel::ERROR, StateMachineLogger::RED, std::string("Exception in state enter: ") + e.what());
+            log(LogLevel::ERROR, std::string("Exception in state enter: ") + e.what());
             enterSuccess = false;
         }
 
@@ -176,17 +283,22 @@ private:
         {
             // Rollback - restore old state since enter() failed
             {
-                std::lock_guard<std::mutex> lock(stateMutex);
+                std::lock_guard<std::mutex> lock(currentStateMutex);
                 currentStateId = oldStateId;
             }
             return handleTransitionFailure(newStateId, "State enter() returned false");
         }
 
         // State transition successful - now update the state
+        // Follow lock hierarchy: currentStateMutex -> historyMutex
         {
-            std::lock_guard<std::mutex> lock(stateMutex);
-            currentStateId = newStateId;
-            addToHistory(newStateId);
+            std::lock_guard<std::mutex> currentLock(currentStateMutex);
+            {
+                std::lock_guard<std::mutex> historyLock(historyMutex);
+                currentStateId = newStateId;
+                stateVersion.fetch_add(1); // Increment version on state change
+                addToHistory(newStateId);
+            }
         }
 
         // Callback outside lock
@@ -194,11 +306,11 @@ private:
         {
             try
             {
-                stateChangeCb(oldStateId, newStateId, oldStateName, newStateName, reason);
+                stateChangeCb(oldStateId, newStateId, oldStateGuard.stateName, newStateGuard.stateName, reason);
             }
             catch (const std::exception& e)
             {
-                log(LogLevel::ERROR, StateMachineLogger::RED, std::string("Exception in state change callback: ") + e.what());
+                log(LogLevel::ERROR, std::string("Exception in state change callback: ") + e.what());
             }
         }
 
@@ -206,6 +318,21 @@ private:
     }
 
 public:
+    /**
+     * @brief Get a safe state guard for the current state
+     * @return StateGuard RAII guard for safe state access
+     */
+    StateGuard getCurrentStateGuard() const
+    {
+        std::lock_guard<std::mutex> lock(statesMutex);
+        auto it = states.find(currentStateId.load());
+        if (it != states.end())
+        {
+            return StateGuard(it->second.state, currentStateId.load(), it->second.name);
+        }
+        return StateGuard(nullptr, StateID{}, "");
+    }
+
     /**
      * @brief Create a state machine starting in the specified state
      * @param initialState The state ID to start in
@@ -224,7 +351,7 @@ public:
 
     // Enable move constructor and assignment
     StateMachine(StateMachine&&) = default;
-    StateMachine& operator=(StateMachine&&) = default;
+    StateMachine &operator=(StateMachine &&) = default;
 
     /**
      * @brief Add a state to the state machine
@@ -238,20 +365,19 @@ public:
     {
         static_assert(std::is_base_of_v<State, StateType>, "StateType must inherit from State");
 
-        std::lock_guard<std::mutex> lock(stateMutex);
+        std::lock_guard<std::mutex> lock(statesMutex);
 
         if (states.find(id) != states.end())
         {
-            log(LogLevel::WARN, StateMachineLogger::YELLOW,
-                std::string("State ") + std::string(name) + " already exists, skipping...");
+            log(LogLevel::WARN, std::string("State ") + std::string(name) + " already exists, skipping...");
             return *this;
         }
 
-        auto state = std::make_unique<StateType>();
+        auto state = std::make_shared<StateType>();
         state->setStateMachine(this);
-        states.emplace(id, StateInfo(std::string(name), std::move(state)));
+        states.emplace(id, StateInfo(std::string(name), state));
 
-        log(LogLevel::DEBUG, StateMachineLogger::CYAN, std::string("Added state: ") + std::string(name));
+        log(LogLevel::DEBUG, std::string("Added state: ") + std::string(name));
         return *this;
     }
 
@@ -264,19 +390,18 @@ public:
      */
     StateMachine &addState(const StateID &id, std::string_view name, std::unique_ptr<State> state)
     {
-        std::lock_guard<std::mutex> lock(stateMutex);
+        std::lock_guard<std::mutex> lock(statesMutex);
 
         if (states.find(id) != states.end())
         {
-            log(LogLevel::WARN, StateMachineLogger::YELLOW,
-                std::string("State ") + std::string(name) + " already exists, skipping...");
+            log(LogLevel::WARN, std::string("State ") + std::string(name) + " already exists, skipping...");
             return *this;
         }
 
         state->setStateMachine(this);
         states.emplace(id, StateInfo(std::string(name), std::move(state)));
 
-        log(LogLevel::DEBUG, StateMachineLogger::CYAN, std::string("Added state: ") + std::string(name));
+        log(LogLevel::DEBUG, std::string("Added state: ") + std::string(name));
         return *this;
     }
 
@@ -392,16 +517,16 @@ public:
         State* state = nullptr;
         std::string stateName;
         {
-            std::lock_guard<std::mutex> lock(stateMutex);
+            std::lock_guard<std::mutex> lock(statesMutex);
             if (isInitialized.load())
             {
-                log(LogLevel::WARN, StateMachineLogger::YELLOW, "State machine already initialized");
+                log(LogLevel::WARN, "State machine already initialized");
                 return *this;
             }
             auto it = states.find(currentStateId.load());
             if (it == states.end())
             {
-                log(LogLevel::ERROR, StateMachineLogger::RED, "Initial state not found");
+                log(LogLevel::ERROR, "Initial state not found");
                 return *this;
             }
             state = it->second.state.get();
@@ -413,27 +538,29 @@ public:
         {
             if (state)
             {
+                // Set the state ID for the initial state
+                state->myStateId = currentStateId.load();
                 enterSuccess = state->enter();
             }
         }
         catch (const std::exception& e)
         {
-            log(LogLevel::ERROR, StateMachineLogger::RED, std::string("Exception in initial state enter: ") + e.what());
+            log(LogLevel::ERROR, std::string("Exception in initial state enter: ") + e.what());
             enterSuccess = false;
         }
 
         if (enterSuccess)
         {
             {
-                std::lock_guard<std::mutex> lock(stateMutex);
+                std::lock_guard<std::mutex> lock(historyMutex);
                 isInitialized.store(true);
                 addToHistory(currentStateId.load());
             }
-            log(LogLevel::INFO, StateMachineLogger::GREEN, std::string("✓ State machine started in state: ") + stateName);
+            log(LogLevel::INFO, std::string("✓ State machine started in state: ") + stateName);
         }
         else
         {
-            log(LogLevel::ERROR, StateMachineLogger::RED, "Failed to start state machine - initial state enter failed");
+            log(LogLevel::ERROR, "Failed to start state machine - initial state enter failed");
         }
 
         return *this;
@@ -449,44 +576,69 @@ public:
             return;
         }
 
-        State* currentState = nullptr;
+        // Use update-level locking to prevent race conditions
+        std::lock_guard<std::mutex> updateLock(updateMutex);
+
+        // Set update in progress flag and clear cancel flag
+        updateInProgress.store(true);
+        updateShouldCancel.store(false);
+
+        StateGuard currentStateGuard(nullptr, StateID{}, "");
         StateID current;
-        std::string currentName;
+        uint64_t versionBeforeUpdate;
 
         {
-            std::lock_guard<std::mutex> lock(stateMutex);
+            std::lock_guard<std::mutex> lock(statesMutex);
             auto it = states.find(currentStateId.load());
             if (it != states.end())
             {
-                currentState = it->second.state.get();
                 current = currentStateId.load();
-                currentName = it->second.name;
+                currentStateGuard = StateGuard(it->second.state, current, it->second.name);
+                versionBeforeUpdate = stateVersion.load();
             }
         }
 
-        // Update the state outside of the lock to prevent deadlocks
-        if (currentState)
+        // Update the state with protection against concurrent state changes
+        if (currentStateGuard)
         {
             try
             {
-                currentState->update();
+                currentStateGuard->update();
+
+                // Check if state changed during update() - race condition detection
+                uint64_t versionAfterUpdate = stateVersion.load();
+                if (versionAfterUpdate != versionBeforeUpdate)
+                {
+                    log(LogLevel::WARN, std::string("State changed during update() - race condition detected. ") +
+                                            "Old state update completed after transition but has been invalidated.");
+                    // Note: The old state's update() already ran to completion,
+                    // but we know it was operating on a stale state
+                }
             }
             catch (const std::exception& e)
             {
-                log(LogLevel::ERROR, StateMachineLogger::RED, std::string("Exception in state update: ") + e.what());
+                log(LogLevel::ERROR, std::string("Exception in state update: ") + e.what());
             }
         }
 
-        // Call update callback
+        // Clear update in progress flag before processing transitions
+        updateInProgress.store(false);
+
+        // Process any pending transitions that were queued during update
+        processPendingTransitions();
+
+        // Call update callback with the state that was active when update started
+        // This ensures consistency even if state changed during update
+        // Config access is thread-safe for reads after construction
         if (auto cb = config->getStateUpdateCallback(); cb)
         {
             try
             {
-                cb(current, currentName);
+                cb(current, currentStateGuard.stateName);
             }
             catch (const std::exception& e)
             {
-                log(LogLevel::ERROR, StateMachineLogger::RED, std::string("Exception in state update callback: ") + e.what());
+                log(LogLevel::ERROR, std::string("Exception in state update callback: ") + e.what());
             }
         }
     }
@@ -495,10 +647,32 @@ public:
      * @brief Change the current state (thread-safe)
      * @param newStateId The ID of the state to transition to
      * @param reason Optional reason for the transition
+     * @param cancelUpdate If true (default), cancels current update to transition immediately;
+     *                     if false, waits for current update to complete before transitioning
      * @return bool True if the state change was successful
      */
-    bool changeState(const StateID &newStateId, std::string_view reason = "")
+    bool changeState(const StateID &newStateId, std::string_view reason = "", bool cancelUpdate = true)
     {
+        // Check if update is currently in progress (lock-free check first)
+        if (updateInProgress.load())
+        {
+            // Queue the transition to be processed after update completes
+            queueTransition(newStateId, reason, cancelUpdate);
+            return true; // Return true as transition is queued (will be processed)
+        }
+
+        // Use update mutex to ensure mutual exclusion with update()
+        std::lock_guard<std::mutex> updateLock(updateMutex);
+
+        // Double-check update status after acquiring lock
+        if (updateInProgress.load())
+        {
+            // Queue the transition to be processed after update completes
+            queueTransition(newStateId, reason, cancelUpdate);
+            return true; // Return true as transition is queued (will be processed)
+        }
+
+        // No update in progress, process transition immediately
         return changeStateInternal(newStateId, reason);
     }
 
@@ -517,8 +691,9 @@ public:
      */
     std::string getCurrentStateName() const
     {
-        std::lock_guard<std::mutex> lock(stateMutex);
-        auto it = states.find(currentStateId.load());
+        StateID currentId = currentStateId.load();
+        std::lock_guard<std::mutex> lock(statesMutex);
+        auto it = states.find(currentId);
         return (it != states.end()) ? it->second.name : "Unknown";
     }
 
@@ -528,8 +703,9 @@ public:
      */
     State* getCurrentState() const
     {
-        std::lock_guard<std::mutex> lock(stateMutex);
-        auto it = states.find(currentStateId.load());
+        StateID currentId = currentStateId.load();
+        std::lock_guard<std::mutex> lock(statesMutex);
+        auto it = states.find(currentId);
         return (it != states.end()) ? it->second.state.get() : nullptr;
     }
 
@@ -540,7 +716,7 @@ public:
      */
     bool hasState(const StateID &id) const
     {
-        std::lock_guard<std::mutex> lock(stateMutex);
+        std::lock_guard<std::mutex> lock(statesMutex);
         return states.find(id) != states.end();
     }
 
@@ -550,7 +726,7 @@ public:
      */
     std::vector<StateID> getStateHistory() const
     {
-        std::lock_guard<std::mutex> lock(stateMutex);
+        std::lock_guard<std::mutex> lock(historyMutex);
         return stateHistory;
     }
 
@@ -569,7 +745,7 @@ public:
      */
     bool validate() const
     {
-        std::lock_guard<std::mutex> lock(stateMutex);
+        std::lock_guard<std::mutex> lock(statesMutex);
         return config->validate(states);
     }
 
@@ -579,7 +755,7 @@ public:
      */
     size_t getStateCount() const
     {
-        std::lock_guard<std::mutex> lock(stateMutex);
+        std::lock_guard<std::mutex> lock(statesMutex);
         return states.size();
     }
 
@@ -591,15 +767,23 @@ public:
     {
         return isInitialized.load();
     }
+
+    /**
+     * @brief Check if update cancellation has been requested
+     * @return bool True if update should be cancelled due to pending transition
+     */
+    bool isUpdateCancellationRequested() const { return updateShouldCancel.load(); }
 };
 
 // Template method implementations for State class
-template<typename StateID>
-void StateMachineTypes::State<StateID>::changeToState(const StateID& newStateId, std::string_view reason)
+template <typename StateID>
+void StateMachineTypes::State<StateID>::changeToState(const StateID &newStateId,
+                                                      std::string_view reason,
+                                                      bool cancelUpdate)
 {
     if (stateMachine)
     {
-        stateMachine->changeState(newStateId, reason);
+        stateMachine->changeState(newStateId, reason, cancelUpdate);
     }
 }
 
@@ -612,6 +796,27 @@ std::shared_ptr<T> StateMachineTypes::State<StateID>::getContext() const
         throw std::runtime_error("State not associated with a state machine");
     }
     return stateMachine->template getContext<T>();
+}
+
+template <typename StateID>
+bool StateMachineTypes::State<StateID>::isCurrentState() const
+{
+    if (!stateMachine)
+    {
+        return false;
+    }
+    return stateMachine->getCurrentStateId() == myStateId;
+}
+
+template <typename StateID>
+bool StateMachineTypes::State<StateID>::shouldCancelUpdate() const
+{
+    if (!stateMachine)
+    {
+        return false;
+    }
+    // Access through public method to respect encapsulation
+    return stateMachine->isUpdateCancellationRequested();
 }
 
 #endif // STATE_MACHINE_HPP

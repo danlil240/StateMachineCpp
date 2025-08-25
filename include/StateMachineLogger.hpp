@@ -29,8 +29,7 @@ public:
     {
     public:
         virtual ~ILogger() = default;
-        virtual void log(StateMachineTypes::LogLevel level, std::string_view color, 
-                        std::string_view machineName, std::string_view message) = 0;
+        virtual void log(StateMachineTypes::LogLevel level, std::string_view machineName, std::string_view message) = 0;
     };
 
     /**
@@ -39,8 +38,9 @@ public:
     class ConsoleLogger : public ILogger
     {
     public:
-        void log(StateMachineTypes::LogLevel level, std::string_view color, 
-                std::string_view machineName, std::string_view message) override {
+        void log(StateMachineTypes::LogLevel level, std::string_view machineName, std::string_view message) override
+        {
+            auto color = getColorForLevel(level);
             std::cout << color << "[" << machineName << "] " << message << RESET << std::endl;
         }
     };
@@ -51,8 +51,11 @@ public:
     class SilentLogger : public ILogger
     {
     public:
-        void log(StateMachineTypes::LogLevel level, std::string_view color, 
-                std::string_view machineName, std::string_view message) override {}
+        void log(StateMachineTypes::LogLevel /* level */,
+                 std::string_view /* machineName */,
+                 std::string_view /* message */) override
+        {
+        }
     };
 
     /**
@@ -81,7 +84,7 @@ public:
             case StateMachineTypes::LogLevel::INFO:
                 return BLUE;
             case StateMachineTypes::LogLevel::DEBUG:
-                return CYAN;
+                return MAGENTA;
             case StateMachineTypes::LogLevel::NONE:
             default:
                 return RESET;

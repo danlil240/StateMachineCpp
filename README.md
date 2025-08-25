@@ -17,40 +17,7 @@
 
 ## Quick Start
 
-```cpp
-#include "StateMachine.hpp"
-
-enum class MyState { IDLE, WORKING, FINISHED };
-
-class IdleState : public StateMachine<MyState>::State {
-public:
-    bool enter() override {
-        std::cout << "Entering idle state" << std::endl;
-        return true;
-    }
-    void update() override {
-        // Transition after some condition
-        changeToState(MyState::WORKING, "Starting work");
-    }
-    void exit() override {
-        std::cout << "Leaving idle state" << std::endl;
-    }
-};
-
-int main() {
-    StateMachine<MyState> sm(MyState::IDLE, "MyMachine");
-    
-    sm.addState<IdleState>(MyState::IDLE, "Idle")
-      .start();
-      
-    // Main loop
-    for (int i = 0; i < 10; ++i) {
-        sm.update();
-    }
-    
-    return 0;
-}
-```
+See `examples/simple_example.cpp` for a complete working example.
 
 ## Core Components
 
@@ -60,16 +27,7 @@ The main template class `StateMachine<StateID>` where `StateID` must be a trivia
 
 ### State Base Class
 
-All states must inherit from `StateMachine<StateID>::State`:
-
-```cpp
-class MyState : public StateMachine<MyStateEnum>::State {
-public:
-    bool enter() override;  // Called when entering state
-    void update() override; // Called each update cycle
-    void exit() override;   // Called when leaving state
-};
-```
+All states must inherit from `StateMachine<StateID>::State` and implement `enter()`, `update()`, and `exit()` methods.
 
 ## Complete API Reference
 
@@ -124,6 +82,12 @@ StateID getCurrentStateId() const;
 std::string getCurrentStateName() const;
 State* getCurrentState() const;
 
+// Thread-safe access to current state (recommended for concurrent access)
+StateGuard getCurrentStateGuard() const;
+
+// Check if update cancellation has been requested
+bool isUpdateCancellationRequested() const;
+
 // Get state history
 std::vector<StateID> getStateHistory() const;
 ```
@@ -142,20 +106,6 @@ template<typename T>
 std::shared_ptr<T> getContext() const;
 ```
 
-**Example:**
-```cpp
-struct RobotContext {
-    double x, y, theta;
-    bool sensors_active;
-};
-
-auto context = std::make_shared<RobotContext>();
-sm.withContext(context);
-
-// In state methods:
-auto ctx = getContext<RobotContext>();
-ctx->x = 1.5;
-```
 
 ### Callbacks
 
@@ -240,82 +190,25 @@ Get reference to the parent state machine:
 StateMachine* getStateMachine() const;
 ```
 
-## Advanced Usage Examples
+### State Status and Control
 
-### Robot Navigation State Machine
-
-```cpp
-enum class RobotState {
-    IDLE, NAVIGATING, OBSTACLE_AVOIDANCE, GOAL_REACHED, ERROR
-};
-
-struct RobotContext {
-    geometry_msgs::Point target;
-    sensor_msgs::LaserScan scan;
-    bool goal_reached = false;
-    bool obstacle_detected = false;
-};
-
-class NavigatingState : public StateMachine<RobotState>::State {
-public:
-    bool enter() override {
-        auto ctx = getContext<RobotContext>();
-        std::cout << "Starting navigation to (" 
-                  << ctx->target.x << ", " << ctx->target.y << ")" << std::endl;
-        return true;
-    }
-
-    void update() override {
-        auto ctx = getContext<RobotContext>();
-        
-        if (ctx->obstacle_detected) {
-            changeToState(RobotState::OBSTACLE_AVOIDANCE, "Obstacle detected");
-        } else if (ctx->goal_reached) {
-            changeToState(RobotState::GOAL_REACHED, "Reached target");
-        }
-        
-        // Continue navigation logic...
-    }
-};
-```
-
-### Error Handling and Fallback
+Check state status and handle update cancellation:
 
 ```cpp
-StateMachine<RobotState> robotSM(RobotState::IDLE, "RobotController");
+// Check if this state is currently active
+bool isCurrentState() const;
 
-robotSM
-    .addState<IdleState>(RobotState::IDLE, "Idle")
-    .addState<NavigatingState>(RobotState::NAVIGATING, "Navigating")
-    .addState<ErrorState>(RobotState::ERROR, "Error")
-    .withFallback(RobotState::ERROR) // Fallback on transition failures
-    .withContext(context)
-    .onError([](std::string_view error, const RobotState& state) {
-        std::cerr << "State machine error: " << error << std::endl;
-    })
-    .start();
+// Check if update should be cancelled (for long-running operations)
+bool shouldCancelUpdate() const;
 ```
 
-### Comprehensive Callback Usage
 
-```cpp
-sm.onStateChanged([](const RobotState& from, const RobotState& to,
-                     std::string_view fromName, std::string_view toName,
-                     std::string_view reason) {
-    std::cout << "Transition: " << fromName << " -> " << toName 
-              << " (" << reason << ")" << std::endl;
-})
-.onStateUpdated([](const RobotState& current, std::string_view name) {
-    // Called after each update
-    static int count = 0;
-    if (++count % 100 == 0) {
-        std::cout << "State " << name << " updated " << count << " times" << std::endl;
-    }
-})
-.onError([](std::string_view error, const RobotState& state) {
-    std::cerr << "Error in state machine: " << error << std::endl;
-});
-```
+## Usage Examples
+
+See the `examples/` directory for comprehensive usage examples:
+- `simple_example.cpp` - Basic state machine setup
+- `example.cpp` - Advanced features with context and callbacks
+- `non_chaining_example.cpp` - Alternative API usage without method chaining
 
 ## Thread Safety
 
@@ -350,45 +243,6 @@ The state machine gracefully handles various error conditions:
 7. **Validate configuration** - Call `validate()` after setup
 8. **Set appropriate log level** - DEBUG for development, ERROR for production
 
-## Integration with ROS2
-
-```cpp
-#include <rclcpp/rclcpp.hpp>
-
-class ROS2StateMachineNode : public rclcpp::Node {
-private:
-    StateMachine<RobotState> sm_;
-    rclcpp::TimerInterface::SharedPtr timer_;
-    
-public:
-    ROS2StateMachineNode() : Node("state_machine_node"), sm_(RobotState::IDLE, "RobotSM") {
-        setupStateMachine();
-        
-        timer_ = create_wall_timer(
-            std::chrono::milliseconds(50),
-            [this]() { sm_.update(); }
-        );
-    }
-    
-private:
-    void setupStateMachine() {
-        auto context = std::make_shared<RobotContext>();
-        
-        sm_.addState<IdleState>(RobotState::IDLE, "Idle")
-           .addState<NavigatingState>(RobotState::NAVIGATING, "Navigating")
-           .withContext(context)
-           .withLogLevel(StateMachine<RobotState>::LogLevel::INFO)
-           .onStateChanged([this](const auto& from, const auto& to, 
-                                  auto fromName, auto toName, auto reason) {
-               RCLCPP_INFO(get_logger(), "State: %s -> %s (%s)", 
-                          std::string(fromName).c_str(), 
-                          std::string(toName).c_str(),
-                          std::string(reason).c_str());
-           })
-           .start();
-    }
-};
-```
 
 ## Building
 

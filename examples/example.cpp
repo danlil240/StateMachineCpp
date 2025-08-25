@@ -494,8 +494,8 @@ void demonstrateAllFeatures() {
 
         // Add comprehensive callbacks
         .onStateChanged(
-            [](const DroneState &from, const DroneState &to, std::string_view fromName, std::string_view toName,
-               std::string_view reason)
+            [](const DroneState & /* from */, const DroneState & /* to */, std::string_view fromName,
+               std::string_view toName, std::string_view reason)
             {
                 std::cout << "🔄 STATE CHANGE: " << fromName << " ➜ " << toName;
                 if (!reason.empty())
@@ -506,7 +506,7 @@ void demonstrateAllFeatures() {
             })
 
         .onStateUpdated(
-            [](const DroneState &current, std::string_view currentName)
+            [](const DroneState & /* current */, std::string_view currentName)
             {
                 // Example: Log periodic status
                 static int update_count = 0;
@@ -618,7 +618,7 @@ void demonstrateExceptionHandling() {
     testSM.addState<IdleState>(DroneState::IDLE, "Idle")
         .addState<ExceptionState>(DroneState::EMERGENCY, "ExceptionState")
         .withLogLevel(StateMachine<DroneState>::LogLevel::INFO)
-        .onError([](std::string_view error, const DroneState &state)
+        .onError([](std::string_view error, const DroneState & /* state */)
                  { std::cout << "🚨 Caught error: " << error << std::endl; })
         .start();
 

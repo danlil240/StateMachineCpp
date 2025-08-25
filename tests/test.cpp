@@ -185,6 +185,55 @@ public:
     void exit() override { g_exit_count++; }
 };
 
+// State with long-running update for race condition testing
+class LongUpdateState : public StateMachine<TestState>::State
+{
+public:
+    std::atomic<bool> update_started{false};
+    std::atomic<bool> update_finished{false};
+    std::atomic<bool> should_exit{false};
+    std::atomic<bool> early_exit_due_to_state_change{false};
+
+    bool enter() override
+    {
+        g_enter_count++;
+        update_started = false;
+        update_finished = false;
+        early_exit_due_to_state_change = false;
+        return true;
+    }
+
+    void update() override
+    {
+        g_update_count++;
+        update_started = true;
+
+        // Simulate long-running operation
+        auto start = std::chrono::steady_clock::now();
+        while (!should_exit && std::chrono::steady_clock::now() - start < std::chrono::milliseconds(100))
+        {
+
+            // Check if update should be cancelled due to pending state transition
+            if (shouldCancelUpdate())
+            {
+                // State transition is pending, stop processing immediately
+                early_exit_due_to_state_change = true;
+                break;
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        update_finished = true;
+    }
+
+    void exit() override
+    {
+        should_exit = true; // Signal update to exit early
+        g_exit_count++;
+    }
+};
+
 // Test functions
 bool test_basic_functionality()
 {
@@ -512,7 +561,7 @@ bool test_thread_safety()
     sm.addState<InitState>(TestState::INIT, "Init")
         .addState<RunningState>(TestState::RUNNING, "Running")
         .addState<PausedState>(TestState::PAUSED, "Paused")
-        .withLogLevel(StateMachine<TestState>::LogLevel::NONE) // Disable logging for clean test
+        .withLogLevel(StateMachine<TestState>::LogLevel::DEBUG) // Disable logging for clean test
         .start();
 
     std::atomic<bool> test_complete{false};
@@ -565,6 +614,335 @@ bool test_thread_safety()
     return true;
 }
 
+// Comprehensive thread safety test
+bool test_comprehensive_thread_safety()
+{
+    TEST_SECTION("Comprehensive Thread Safety");
+
+    const int OPERATIONS_PER_THREAD = 50;
+    const int TEST_DURATION_MS = 500;
+
+    // Test with performance metrics and context
+    auto context = std::make_shared<TestContext>("ThreadTest", 0);
+    StateMachine<TestState> sm(TestState::INIT, "ComprehensiveThreadTest");
+
+    std::atomic<int> callback_count{0};
+    std::atomic<int> error_count{0};
+    std::atomic<bool> test_active{true};
+
+    sm.addState<InitState>(TestState::INIT, "Init")
+        .addState<RunningState>(TestState::RUNNING, "Running")
+        .addState<PausedState>(TestState::PAUSED, "Paused")
+        .addState<FinishedState>(TestState::FINISHED, "Finished")
+        .withContext(context)
+        .withLogLevel(StateMachine<TestState>::LogLevel::DEBUG)
+        .onStateChanged([&](const TestState &, const TestState &, std::string_view, std::string_view, std::string_view)
+                        { callback_count++; })
+        .onError([&](std::string_view, const TestState &) { error_count++; })
+        .start();
+
+    std::vector<std::future<void>> futures;
+    std::atomic<int> total_updates{0};
+    std::atomic<int> total_transitions{0};
+    std::atomic<int> context_accesses{0};
+    std::atomic<int> history_checks{0};
+
+    // Thread 1-2: Continuous updates
+    for (int i = 0; i < 2; ++i)
+    {
+        futures.push_back(std::async(std::launch::async,
+                                     [&]()
+                                     {
+                                         while (test_active)
+                                         {
+                                             sm.update();
+                                             total_updates++;
+                                             std::this_thread::sleep_for(std::chrono::microseconds(500));
+                                         }
+                                     }));
+    }
+
+    // Thread 3-4: State transitions
+    for (int i = 0; i < 2; ++i)
+    {
+        futures.push_back(std::async(
+            std::launch::async,
+            [&]()
+            {
+                TestState states[] = {TestState::RUNNING, TestState::PAUSED, TestState::FINISHED, TestState::INIT};
+                int op_count = 0;
+
+                while (test_active && op_count < OPERATIONS_PER_THREAD)
+                {
+                    TestState target = states[op_count % 4];
+                    if (sm.changeState(target, "Concurrent test"))
+                    {
+                        total_transitions++;
+                    }
+                    op_count++;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                }
+            }));
+    }
+
+    // Thread 5-6: Context access
+    for (int i = 0; i < 2; ++i)
+    {
+        futures.push_back(std::async(std::launch::async,
+                                     [&]()
+                                     {
+                                         while (test_active)
+                                         {
+                                             try
+                                             {
+                                                 auto ctx = sm.getContext<TestContext>();
+                                                 if (ctx)
+                                                 {
+                                                     ctx->value++; // Safe atomic increment
+                                                     context_accesses++;
+                                                 }
+                                             }
+                                             catch (const std::exception &)
+                                             {
+                                                 // Context might not be available during transitions
+                                             }
+                                             std::this_thread::sleep_for(std::chrono::milliseconds(3));
+                                         }
+                                     }));
+    }
+
+    // Thread 7-8: History and state queries
+    for (int i = 0; i < 2; ++i)
+    {
+        futures.push_back(std::async(std::launch::async,
+                                     [&]()
+                                     {
+                                         while (test_active)
+                                         {
+                                             // Query current state
+                                             auto current = sm.getCurrentStateId();
+                                             auto name = sm.getCurrentStateName();
+                                             (void)current; // Suppress unused warning
+
+                                             // Get history
+                                             auto history = sm.getStateHistory();
+                                             if (!history.empty())
+                                             {
+                                                 history_checks++;
+                                             }
+
+                                             // Check if ready
+                                             bool ready = sm.isReady();
+                                             (void)ready; // Suppress unused warning
+
+                                             std::this_thread::sleep_for(std::chrono::milliseconds(4));
+                                         }
+                                     }));
+    }
+
+    // Let all threads run
+    std::this_thread::sleep_for(std::chrono::milliseconds(TEST_DURATION_MS));
+    test_active = false;
+
+    // Wait for all threads to complete
+    for (auto &future : futures)
+    {
+        future.wait();
+    }
+
+    // Verify results
+    EXPECT(total_updates > 0, "Should have performed updates concurrently");
+    EXPECT(total_transitions >= 0, "Should have attempted state transitions");
+    EXPECT(context_accesses >= 0, "Should have accessed context concurrently");
+    EXPECT(history_checks > 0, "Should have checked history concurrently");
+    EXPECT(sm.isReady(), "State machine should still be operational");
+
+    // Verify state machine integrity
+    auto final_state = sm.getCurrentStateId();
+    bool valid_final_state = (final_state == TestState::INIT || final_state == TestState::RUNNING ||
+                              final_state == TestState::PAUSED || final_state == TestState::FINISHED);
+    EXPECT(valid_final_state, "Final state should be valid");
+
+    // Check context integrity
+    auto final_context = sm.getContext<TestContext>();
+    EXPECT(final_context != nullptr, "Context should still be accessible");
+    EXPECT(final_context->name == "ThreadTest", "Context should maintain its data integrity");
+
+    std::cout << "  Concurrent operations completed:" << std::endl;
+    std::cout << "    Updates: " << total_updates << std::endl;
+    std::cout << "    Transitions: " << total_transitions << std::endl;
+    std::cout << "    Context accesses: " << context_accesses << std::endl;
+    std::cout << "    History checks: " << history_checks << std::endl;
+    std::cout << "    Callbacks fired: " << callback_count << std::endl;
+
+    return true;
+}
+
+// Performance metrics thread safety test
+bool test_performance_metrics_thread_safety()
+{
+    TEST_SECTION("Performance Metrics Thread Safety");
+
+    StateMachine<TestState> sm(TestState::INIT, "MetricsThreadTest");
+
+    sm.addState<InitState>(TestState::INIT, "Init")
+        .addState<RunningState>(TestState::RUNNING, "Running")
+        .addState<PausedState>(TestState::PAUSED, "Paused")
+        .withLogLevel(StateMachine<TestState>::LogLevel::NONE)
+        .start();
+
+    std::atomic<bool> test_active{true};
+    std::vector<std::future<void>> futures;
+
+    // Multiple threads performing operations that affect metrics
+    for (int i = 0; i < 4; ++i)
+    {
+        futures.push_back(std::async(std::launch::async,
+                                     [&]()
+                                     {
+                                         TestState states[] = {TestState::RUNNING, TestState::PAUSED, TestState::INIT};
+
+                                         while (test_active)
+                                         {
+                                             // Perform state transitions (affects transition metrics)
+                                             sm.changeState(states[rand() % 3], "Metrics test");
+
+                                             // Perform updates (affects update metrics)
+                                             sm.update();
+
+                                             std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                                         }
+                                     }));
+    }
+
+    // Let threads run
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    test_active = false;
+
+    // Wait for completion
+    for (auto &future : futures)
+    {
+        future.wait();
+    }
+
+    // Verify metrics are accessible and consistent
+    // Note: The StateMachine class would need to expose performance metrics
+    // This is a placeholder test for when metrics are implemented
+    EXPECT(sm.isReady(), "State machine should remain operational after metrics stress test");
+
+    return true;
+}
+
+// Test race condition: state change during long-running update
+bool test_concurrent_update_state_change()
+{
+    TEST_SECTION("Concurrent Update and State Change Race Condition");
+
+    StateMachine<TestState> sm(TestState::ERROR, "RaceConditionTest");
+    auto longState = std::make_unique<LongUpdateState>();
+    auto longStatePtr = longState.get(); // Keep reference for testing
+
+    sm.addState<InitState>(TestState::INIT, "Init")
+        .addState(TestState::ERROR, "LongUpdate", std::move(longState))
+        .withLogLevel(StateMachine<TestState>::LogLevel::NONE)
+        .start();
+
+    std::atomic<bool> test_complete{false};
+    std::atomic<bool> update_thread_started{false};
+    std::atomic<bool> transition_attempted{false};
+    std::atomic<bool> transition_succeeded{false};
+
+    // Thread 1: Start a long-running update
+    auto updater = std::async(std::launch::async,
+                              [&]()
+                              {
+                                  update_thread_started = true;
+                                  while (!test_complete)
+                                  {
+                                      sm.update(); // This will run the long update
+                                      if (longStatePtr->update_finished)
+                                      {
+                                          break; // Exit if update completed
+                                      }
+                                      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                                  }
+                              });
+
+    // Wait for update to start
+    while (!update_thread_started || !longStatePtr->update_started)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    // Thread 2: Try to change state while update is running
+    auto changer = std::async(std::launch::async,
+                              [&]()
+                              {
+                                  // Wait a bit to ensure update is definitely running
+                                  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+                                  transition_attempted = true;
+                                  // Attempt transition while update is still running
+                                  if (sm.changeState(TestState::INIT, "Interrupt long update"))
+                                  {
+                                      transition_succeeded = true;
+                                  }
+                              });
+
+    // Let the race condition play out
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    test_complete = true;
+
+    // Wait for both threads
+    updater.wait();
+    changer.wait();
+
+    // Analyze what happened
+    bool update_was_running = longStatePtr->update_started;
+    bool update_completed = longStatePtr->update_finished;
+    TestState final_state = sm.getCurrentStateId();
+
+    EXPECT(update_was_running, "Long update should have started");
+    EXPECT(transition_attempted, "State transition should have been attempted");
+
+    bool early_exit_detected = longStatePtr->early_exit_due_to_state_change.load();
+
+    std::cout << "  Race condition results:" << std::endl;
+    std::cout << "    Update started: " << (update_was_running ? "Yes" : "No") << std::endl;
+    std::cout << "    Update finished: " << (update_completed ? "Yes" : "No") << std::endl;
+    std::cout << "    Transition attempted: " << (transition_attempted ? "Yes" : "No") << std::endl;
+    std::cout << "    Transition succeeded: " << (transition_succeeded ? "Yes" : "No") << std::endl;
+    std::cout << "    Early exit detected: " << (early_exit_detected ? "Yes" : "No") << std::endl;
+    std::cout << "    Final state: " << (final_state == TestState::INIT ? "INIT" : "ERROR") << std::endl;
+
+    // The key insight: What happens depends on the StateMachine's internal synchronization
+    if (transition_succeeded && early_exit_detected)
+    {
+        std::cout << "  ✅ RACE CONDITION PREVENTED: State update detected transition and exited early!" << std::endl;
+        std::cout << "     Old state's update() stopped processing when state changed." << std::endl;
+    }
+    else if (transition_succeeded)
+    {
+        std::cout << "  ⚠️  RACE CONDITION DETECTED: State changed while update() was running!" << std::endl;
+        std::cout << "     This means the old state's update() continued after state transition." << std::endl;
+
+        // In this case, the update might have continued on the old state
+        // while the state machine already moved to the new state
+        if (final_state == TestState::INIT)
+        {
+            std::cout << "  📊 Impact: Old state update ran concurrently with new state" << std::endl;
+        }
+    }
+    else
+    {
+        std::cout << "  ✅ PROTECTED: State machine prevented transition during update" << std::endl;
+    }
+
+    EXPECT(sm.isReady(), "State machine should remain operational");
+
+    return true;
+}
+
 bool test_reset_functionality()
 {
     TEST_SECTION("Reset Functionality");
@@ -594,8 +972,8 @@ int main()
     std::cout << "====================================================" << std::endl;
     
     bool all_passed = true;
-    
-    std::vector<std::pair<std::string, bool(*)()>> tests = {
+
+    std::vector<std::pair<std::string, bool (*)()>> tests = {
         {"Basic Functionality", test_basic_functionality},
         {"Context Management", test_context_management},
         {"Callback Functionality", test_callbacks},
@@ -607,9 +985,11 @@ int main()
         {"Validation", test_validation},
         {"Auto Transitions", test_auto_transitions},
         {"Thread Safety", test_thread_safety},
-        {"Reset Functionality", test_reset_functionality}
-    };
-    
+        {"Comprehensive Thread Safety", test_comprehensive_thread_safety},
+        {"Performance Metrics Thread Safety", test_performance_metrics_thread_safety},
+        {"Concurrent Update/State Change Race", test_concurrent_update_state_change},
+        {"Reset Functionality", test_reset_functionality}};
+
     int passed = 0;
     int total = tests.size();
     

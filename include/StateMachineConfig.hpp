@@ -160,7 +160,7 @@ public:
         {
             if (logger && StateMachineLogger::shouldLog(logLevel, LogLevel::ERROR))
             {
-                logger->log(LogLevel::ERROR, StateMachineLogger::RED, machineName, 
+                logger->log(LogLevel::ERROR, machineName, 
                            "Initial state not found in state registry");
             }
             valid = false;
@@ -171,7 +171,7 @@ public:
         {
             if (logger && StateMachineLogger::shouldLog(logLevel, LogLevel::ERROR))
             {
-                logger->log(LogLevel::ERROR, StateMachineLogger::RED, machineName,
+                logger->log(LogLevel::ERROR, machineName,
                            "Fallback state not found in state registry");
             }
             valid = false;
