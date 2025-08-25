@@ -40,7 +40,9 @@ public:
     {
     public:
         void log(StateMachineTypes::LogLevel level, std::string_view color, 
-                std::string_view machineName, std::string_view message) override;
+                std::string_view machineName, std::string_view message) override {
+            std::cout << color << "[" << machineName << "] " << message << RESET << std::endl;
+        }
     };
 
     /**
@@ -56,22 +58,42 @@ public:
     /**
      * @brief Create default console logger
      */
-    static std::unique_ptr<ILogger> createConsoleLogger();
+    static std::unique_ptr<ILogger> createConsoleLogger() {
+        return std::make_unique<ConsoleLogger>();
+    }
 
     /**
      * @brief Create silent logger
      */
-    static std::unique_ptr<ILogger> createSilentLogger();
-
+    static std::unique_ptr<ILogger> createSilentLogger() {
+        return std::make_unique<SilentLogger>();
+    }
+    
     /**
      * @brief Helper method to get color for log level
      */
-    static std::string_view getColorForLevel(StateMachineTypes::LogLevel level);
-
+    static std::string_view getColorForLevel(StateMachineTypes::LogLevel level) {
+        switch (level) {
+            case StateMachineTypes::LogLevel::ERROR:
+                return RED;
+            case StateMachineTypes::LogLevel::WARN:
+                return YELLOW;
+            case StateMachineTypes::LogLevel::INFO:
+                return BLUE;
+            case StateMachineTypes::LogLevel::DEBUG:
+                return CYAN;
+            case StateMachineTypes::LogLevel::NONE:
+            default:
+                return RESET;
+        }
+    }
+    
     /**
      * @brief Check if level should be logged based on current log level
      */
-    static bool shouldLog(StateMachineTypes::LogLevel currentLevel, StateMachineTypes::LogLevel messageLevel);
+    static bool shouldLog(StateMachineTypes::LogLevel currentLevel, StateMachineTypes::LogLevel messageLevel) {
+        return currentLevel >= messageLevel;
+    }
 };
 
 #endif // STATE_MACHINE_LOGGER_HPP

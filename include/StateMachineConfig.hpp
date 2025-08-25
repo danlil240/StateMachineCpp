@@ -9,21 +9,22 @@
 #include <unordered_map>
 
 // Forward declaration
+template<typename StateID>
 class StateMachine;
 
 /**
- * @brief Configuration and builder for StateMachine
+ * @brief Configuration and builder for StateMachine - templated
  */
+template<typename StateID>
 class StateMachineConfig
 {
 public:
-    using StateID = StateMachineTypes::StateID;
-    using State = StateMachineTypes::State;
-    using StateInfo = StateMachineTypes::StateInfo;
+    using State = StateMachineTypes::State<StateID>;
+    using StateInfo = StateMachineTypes::StateInfo<StateID>;
     using LogLevel = StateMachineTypes::LogLevel;
-    using StateChangeCallback = StateMachineTypes::StateChangeCallback;
-    using StateUpdateCallback = StateMachineTypes::StateUpdateCallback;
-    using ErrorCallback = StateMachineTypes::ErrorCallback;
+    using StateChangeCallback = StateMachineTypes::StateChangeCallback<StateID>;
+    using StateUpdateCallback = StateMachineTypes::StateUpdateCallback<StateID>;
+    using ErrorCallback = StateMachineTypes::ErrorCallback<StateID>;
 
 private:
     // Configuration data
@@ -49,42 +50,73 @@ public:
     /**
      * @brief Create configuration with initial state and name
      */
-    StateMachineConfig(StateID initialState, std::string name = "StateMachine");
+    StateMachineConfig(StateID initialState, std::string name = "StateMachine")
+        : machineName(std::move(name)), initialStateId(initialState), logger(StateMachineLogger::createConsoleLogger())
+    {
+    }
 
     /**
      * @brief Set fallback state for error recovery
      */
-    StateMachineConfig& withFallback(StateID fallbackState);
+    StateMachineConfig& withFallback(StateID fallbackState)
+    {
+        fallbackStateId = fallbackState;
+        return *this;
+    }
 
     /**
      * @brief Set logging level
      */
-    StateMachineConfig& withLogLevel(LogLevel level);
+    StateMachineConfig& withLogLevel(LogLevel level)
+    {
+        logLevel = level;
+        return *this;
+    }
 
     /**
      * @brief Set maximum history size
      */
-    StateMachineConfig& withHistorySize(size_t size);
+    StateMachineConfig& withHistorySize(size_t size)
+    {
+        maxHistorySize = size;
+        return *this;
+    }
 
     /**
      * @brief Set custom logger
      */
-    StateMachineConfig& withLogger(std::unique_ptr<StateMachineLogger::ILogger> customLogger);
+    StateMachineConfig& withLogger(std::unique_ptr<StateMachineLogger::ILogger> customLogger)
+    {
+        logger = std::move(customLogger);
+        return *this;
+    }
 
     /**
      * @brief Set state change callback
      */
-    StateMachineConfig& onStateChanged(StateChangeCallback callback);
+    StateMachineConfig& onStateChanged(StateChangeCallback callback)
+    {
+        onStateChange = std::move(callback);
+        return *this;
+    }
 
     /**
      * @brief Set state update callback
      */
-    StateMachineConfig& onStateUpdated(StateUpdateCallback callback);
+    StateMachineConfig& onStateUpdated(StateUpdateCallback callback)
+    {
+        onStateUpdate = std::move(callback);
+        return *this;
+    }
 
     /**
      * @brief Set error callback
      */
-    StateMachineConfig& onError(ErrorCallback callback);
+    StateMachineConfig& onError(ErrorCallback callback)
+    {
+        onErrorCb = std::move(callback);
+        return *this;
+    }
 
     /**
      * @brief Set user context with type safety
@@ -119,7 +151,34 @@ public:
     /**
      * @brief Validate configuration against registered states
      */
-    bool validate(const std::unordered_map<StateID, StateInfo>& states) const;
+    bool validate(const std::unordered_map<StateID, StateInfo>& states) const
+    {
+        bool valid = true;
+
+        // Check if initial state exists
+        if (states.find(initialStateId) == states.end())
+        {
+            if (logger && StateMachineLogger::shouldLog(logLevel, LogLevel::ERROR))
+            {
+                logger->log(LogLevel::ERROR, StateMachineLogger::RED, machineName, 
+                           "Initial state not found in state registry");
+            }
+            valid = false;
+        }
+
+        // Check if fallback state exists (if set)
+        if (fallbackStateId.has_value() && states.find(fallbackStateId.value()) == states.end())
+        {
+            if (logger && StateMachineLogger::shouldLog(logLevel, LogLevel::ERROR))
+            {
+                logger->log(LogLevel::ERROR, StateMachineLogger::RED, machineName,
+                           "Fallback state not found in state registry");
+            }
+            valid = false;
+        }
+
+        return valid;
+    }
 
     // Getters for internal use
     const std::string& getMachineName() const { return machineName; }

@@ -23,7 +23,7 @@
 #include <vector>
 
 // Test state enums
-enum TestState
+enum class TestState
 {
     INIT,
     RUNNING,
@@ -63,7 +63,7 @@ std::atomic<int> g_error_count{0};
     std::cout << "\n🔍 Testing: " << name << std::endl;
 
 // Test States with different behaviors
-class InitState : public StateMachine::State
+class InitState : public StateMachine<TestState>::State
 {
 public:
     bool enter() override
@@ -83,7 +83,7 @@ public:
     void exit() override { g_exit_count++; }
 };
 
-class RunningState : public StateMachine::State
+class RunningState : public StateMachine<TestState>::State
 {
     int update_counter = 0;
     
@@ -108,7 +108,7 @@ public:
     void exit() override { g_exit_count++; }
 };
 
-class PausedState : public StateMachine::State
+class PausedState : public StateMachine<TestState>::State
 {
 public:
     bool enter() override
@@ -122,7 +122,7 @@ public:
 };
 
 // State that fails to enter
-class FailingEnterState : public StateMachine::State
+class FailingEnterState : public StateMachine<TestState>::State
 {
 public:
     bool enter() override
@@ -136,7 +136,7 @@ public:
 };
 
 // State that throws exceptions
-class ExceptionState : public StateMachine::State
+class ExceptionState : public StateMachine<TestState>::State
 {
 public:
     bool enter() override
@@ -159,7 +159,7 @@ public:
     }
 };
 
-class ErrorState : public StateMachine::State
+class ErrorState : public StateMachine<TestState>::State
 {
 public:
     bool enter() override
@@ -172,7 +172,7 @@ public:
     void exit() override { g_exit_count++; }
 };
 
-class FinishedState : public StateMachine::State
+class FinishedState : public StateMachine<TestState>::State
 {
 public:
     bool enter() override
@@ -193,9 +193,9 @@ bool test_basic_functionality()
     g_enter_count = 0;
     g_exit_count = 0;
     g_update_count = 0;
-    
-    StateMachine sm(TestState::INIT, "BasicTest");
-    
+
+    StateMachine<TestState> sm(TestState::INIT, "BasicTest");
+
     EXPECT(!sm.isReady(), "State machine should not be ready before start()");
     EXPECT(sm.getCurrentStateId() == TestState::INIT, "Initial state should be INIT");
     EXPECT(sm.getStateCount() == 0, "Should have 0 states before adding any");
@@ -234,8 +234,8 @@ bool test_basic_functionality()
 bool test_context_management()
 {
     TEST_SECTION("Context Management");
-    
-    StateMachine sm(TestState::INIT, "ContextTest");
+
+    StateMachine<TestState> sm(TestState::INIT, "ContextTest");
     auto context = std::make_shared<TestContext>("TestCtx", 42);
     
     sm.addState<InitState>(TestState::INIT, "Init")
@@ -275,30 +275,31 @@ bool test_callbacks()
     
     TestState from_state, to_state;
     std::string from_name, to_name, reason;
-    
-    StateMachine sm(TestState::INIT, "CallbackTest");
-    
+
+    StateMachine<TestState> sm(TestState::INIT, "CallbackTest");
+
     sm.addState<InitState>(TestState::INIT, "Init")
-      .addState<RunningState>(TestState::RUNNING, "Running")
-      .onStateChanged([&](const int& f, const int& t, 
-                          std::string_view fn, std::string_view tn, std::string_view r) {
-          change_callback_called = true;
-          from_state = static_cast<TestState>(f);
-          to_state = static_cast<TestState>(t);
-          from_name = fn;
-          to_name = tn;
-          reason = r;
-          g_state_change_count++;
-      })
-      .onStateUpdated([&](const int&, std::string_view) {
-          update_callback_called = true;
-      })
-      .onError([&](std::string_view, const int&) {
-          error_callback_called = true;
-          g_error_count++;
-      })
-      .start();
-    
+        .addState<RunningState>(TestState::RUNNING, "Running")
+        .onStateChanged(
+            [&](const TestState &f, const TestState &t, std::string_view fn, std::string_view tn, std::string_view r)
+            {
+                change_callback_called = true;
+                from_state = static_cast<TestState>(f);
+                to_state = static_cast<TestState>(t);
+                from_name = fn;
+                to_name = tn;
+                reason = r;
+                g_state_change_count++;
+            })
+        .onStateUpdated([&](const TestState &, std::string_view) { update_callback_called = true; })
+        .onError(
+            [&](std::string_view, const TestState &)
+            {
+                error_callback_called = true;
+                g_error_count++;
+            })
+        .start();
+
     // Test state change callback
     sm.changeState(TestState::RUNNING, "Test transition");
     EXPECT(change_callback_called, "State change callback should be called");
@@ -356,22 +357,20 @@ bool test_exception_handling()
     g_error_count = 0;
     
     StateMachine sm(TestState::INIT, "ExceptionTest");
-    
+
     sm.addState<InitState>(TestState::INIT, "Init")
-      .addState<ExceptionState>(TestState::ERROR, "Exception")
-      .withLogLevel(StateMachine::LogLevel::ERROR) // Reduce log noise
-      .onError([](std::string_view, const int&) {
-          g_error_count++;
-      })
-      .start();
-    
+        .addState<ExceptionState>(TestState::ERROR, "Exception")
+        .withLogLevel(StateMachine<TestState>::LogLevel::ERROR) // Reduce log noise
+        .onError([](std::string_view, const TestState &) { g_error_count++; })
+        .start();
+
     // Test exception in enter() - should handle gracefully
     bool result = sm.changeState(TestState::ERROR, "Testing exception");
     EXPECT(!result, "Transition to exception state should fail");
     
     // Note: After a failed transition with exception, the state machine may be in ERROR state
     // even though enter() failed, because the current state was already updated before enter() was called
-    int current_state = sm.getCurrentStateId();
+    TestState current_state = sm.getCurrentStateId();
     EXPECT(current_state == TestState::INIT || current_state == TestState::ERROR, "Should be in INIT or ERROR after failed transition");
     EXPECT(g_enter_count >= 1, "Enter should have been called");
     
@@ -385,14 +384,14 @@ bool test_fallback_mechanism()
     g_enter_count = 0;
     
     StateMachine sm(TestState::INIT, "FallbackTest");
-    
+
     sm.addState<InitState>(TestState::INIT, "Init")
-      .addState<FailingEnterState>(TestState::ERROR, "FailingEnter")
-      .addState<ErrorState>(TestState::PAUSED, "Fallback") // Use PAUSED as fallback
-      .withFallback(TestState::PAUSED)
-      .withLogLevel(StateMachine::LogLevel::ERROR)
-      .start();
-    
+        .addState<FailingEnterState>(TestState::ERROR, "FailingEnter")
+        .addState<ErrorState>(TestState::PAUSED, "Fallback") // Use PAUSED as fallback
+        .withFallback(TestState::PAUSED)
+        .withLogLevel(StateMachine<TestState>::LogLevel::ERROR)
+        .start();
+
     // Attempt transition to failing state - should fall back
     bool result = sm.changeState(TestState::ERROR, "Testing fallback");
     EXPECT(result, "Fallback transition should succeed");
@@ -407,9 +406,9 @@ bool test_same_state_transition()
     
     g_enter_count = 0;
     g_exit_count = 0;
-    
-    StateMachine sm(TestState::INIT, "SameStateTest");
-    
+
+    StateMachine<TestState> sm(TestState::INIT, "SameStateTest");
+
     sm.addState<InitState>(TestState::INIT, "Init")
       .start();
     
@@ -429,9 +428,9 @@ bool test_same_state_transition()
 bool test_history_tracking()
 {
     TEST_SECTION("History Tracking");
-    
-    StateMachine sm(TestState::INIT, "HistoryTest");
-    
+
+    StateMachine<TestState> sm(TestState::INIT, "HistoryTest");
+
     sm.addState<InitState>(TestState::INIT, "Init")
       .addState<RunningState>(TestState::RUNNING, "Running")
       .addState<PausedState>(TestState::PAUSED, "Paused")
@@ -456,9 +455,9 @@ bool test_history_tracking()
 bool test_validation()
 {
     TEST_SECTION("State Machine Validation");
-    
-    StateMachine sm(TestState::INIT, "ValidationTest");
-    
+
+    StateMachine<TestState> sm(TestState::INIT, "ValidationTest");
+
     // Test validation before adding states
     EXPECT(!sm.validate(), "Should fail validation without states");
     
@@ -481,9 +480,9 @@ bool test_auto_transitions()
     
     g_enter_count = 0;
     g_exit_count = 0;
-    
-    StateMachine sm(TestState::RUNNING, "AutoTransitionTest");
-    
+
+    StateMachine<TestState> sm(TestState::RUNNING, "AutoTransitionTest");
+
     sm.addState<RunningState>(TestState::RUNNING, "Running")
       .addState<PausedState>(TestState::PAUSED, "Paused")
       .start();
@@ -507,15 +506,15 @@ bool test_auto_transitions()
 bool test_thread_safety()
 {
     TEST_SECTION("Basic Thread Safety");
-    
-    StateMachine sm(TestState::INIT, "ThreadTest");
-    
+
+    StateMachine<TestState> sm(TestState::INIT, "ThreadTest");
+
     sm.addState<InitState>(TestState::INIT, "Init")
-      .addState<RunningState>(TestState::RUNNING, "Running")
-      .addState<PausedState>(TestState::PAUSED, "Paused")
-      .withLogLevel(StateMachine::LogLevel::NONE) // Disable logging for clean test
-      .start();
-    
+        .addState<RunningState>(TestState::RUNNING, "Running")
+        .addState<PausedState>(TestState::PAUSED, "Paused")
+        .withLogLevel(StateMachine<TestState>::LogLevel::NONE) // Disable logging for clean test
+        .start();
+
     std::atomic<bool> test_complete{false};
     std::atomic<int> successful_transitions{0};
     std::atomic<int> update_calls{0};
@@ -569,9 +568,9 @@ bool test_thread_safety()
 bool test_reset_functionality()
 {
     TEST_SECTION("Reset Functionality");
-    
-    StateMachine sm(TestState::INIT, "ResetTest");
-    
+
+    StateMachine<TestState> sm(TestState::INIT, "ResetTest");
+
     sm.addState<InitState>(TestState::INIT, "Init")
       .addState<RunningState>(TestState::RUNNING, "Running")
       .start();

@@ -6,8 +6,10 @@
 #include <string>
 #include <string_view>
 #include <stdexcept>
+#include <type_traits>
 
-// Forward declaration
+// Forward declarations
+template<typename StateID>
 class StateMachine;
 
 /**
@@ -15,19 +17,22 @@ class StateMachine;
  */
 namespace StateMachineTypes {
 
-    using StateID = int;
+    // StateID is now a template parameter - no fixed type
 
     /**
-     * @brief Callback types for external observers
+     * @brief Callback types for external observers - templated
      */
+    template<typename StateID>
     using StateChangeCallback = std::function<void(
         const StateID& from, const StateID& to,
         std::string_view fromName, std::string_view toName,
         std::string_view reason)>;
     
+    template<typename StateID>
     using StateUpdateCallback = std::function<void(
         const StateID& current, std::string_view currentName)>;
     
+    template<typename StateID>
     using ErrorCallback = std::function<void(
         std::string_view error, const StateID& currentState)>;
 
@@ -44,8 +49,9 @@ namespace StateMachineTypes {
     };
 
     /**
-     * @brief Base state class that all states must inherit from
+     * @brief Base state class that all states must inherit from - templated
      */
+    template<typename StateID>
     class State
     {
     public:
@@ -77,7 +83,7 @@ namespace StateMachineTypes {
         /**
          * @brief Get the state machine this state belongs to
          */
-        StateMachine* getStateMachine() const { return stateMachine; }
+        StateMachine<StateID>* getStateMachine() const { return stateMachine; }
 
         /**
          * @brief Get the context object with type safety
@@ -91,24 +97,25 @@ namespace StateMachineTypes {
         /**
          * @brief Set the state machine pointer (internal use only)
          */
-        void setStateMachine(StateMachine* sm) { stateMachine = sm; }
+        void setStateMachine(StateMachine<StateID>* sm) { stateMachine = sm; }
 
     private:
-        friend class StateMachine;
-        StateMachine* stateMachine = nullptr;
+        friend class StateMachine<StateID>;
+        StateMachine<StateID>* stateMachine = nullptr;
     };
 
     /**
-     * @brief Internal structure to hold state information
+     * @brief Internal structure to hold state information - templated
      */
+    template<typename StateID>
     struct StateInfo
     {
         std::string name;
-        std::unique_ptr<State> state;
+        std::unique_ptr<State<StateID>> state;
 
         StateInfo() = default;
 
-        StateInfo(std::string n, std::unique_ptr<State> s)
+        StateInfo(std::string n, std::unique_ptr<State<StateID>> s)
             : name(std::move(n)), state(std::move(s))
         {
         }

@@ -20,8 +20,8 @@
 #include <cmath>
 #include <random>
 
-// Drone mission states
-enum DroneState
+// Drone mission states - using enum class for type safety
+enum class DroneState
 {
     IDLE,
     PREFLIGHT_CHECK,
@@ -33,6 +33,34 @@ enum DroneState
     EMERGENCY,
     MISSION_COMPLETE
 };
+
+// Stream operator for DroneState enum
+inline std::ostream &operator<<(std::ostream &os, DroneState state)
+{
+    switch (state)
+    {
+    case DroneState::IDLE:
+        return os << "IDLE";
+    case DroneState::PREFLIGHT_CHECK:
+        return os << "PREFLIGHT_CHECK";
+    case DroneState::TAKEOFF:
+        return os << "TAKEOFF";
+    case DroneState::NAVIGATE_TO_TARGET:
+        return os << "NAVIGATE_TO_TARGET";
+    case DroneState::HOVER_AT_TARGET:
+        return os << "HOVER_AT_TARGET";
+    case DroneState::RETURN_TO_BASE:
+        return os << "RETURN_TO_BASE";
+    case DroneState::LANDING:
+        return os << "LANDING";
+    case DroneState::EMERGENCY:
+        return os << "EMERGENCY";
+    case DroneState::MISSION_COMPLETE:
+        return os << "MISSION_COMPLETE";
+    default:
+        return os << "UNKNOWN";
+    }
+}
 
 // Shared context between all states
 struct DroneContext {
@@ -70,7 +98,7 @@ struct DroneContext {
 
 // State implementations demonstrating different patterns
 
-class IdleState : public StateMachine::State
+class IdleState : public StateMachine<DroneState>::State
 {
 public:
     bool enter() override {
@@ -98,6 +126,7 @@ public:
         if (idle_counter == 5) {
             std::cout << "📡 Mission command received - Starting preflight check" << std::endl;
             changeToState(DroneState::PREFLIGHT_CHECK, "Mission command received");
+            idle_counter = 0; // Reset after transition
         }
     }
     
@@ -106,7 +135,7 @@ public:
     }
 };
 
-class PreflightCheckState : public StateMachine::State
+class PreflightCheckState : public StateMachine<DroneState>::State
 {
 private:
     int check_counter = 0;
@@ -149,10 +178,9 @@ public:
                 // Complete preflight check
                 if (ctx->sensors_ok && ctx->gps_lock && ctx->motors_ok && ctx->battery_ok) {
                     std::cout << "✅ All preflight checks passed!" << std::endl;
-                    changeToState(DroneState::TAKEOFF, "Preflight checks completed");
+                    changeToState(DroneState::TAKEOFF, "Preflight check passed");
                 } else {
-                    std::cout << "❌ Preflight checks failed!" << std::endl;
-                    changeToState(DroneState::EMERGENCY, "Preflight check failure");
+                    changeToState(DroneState::EMERGENCY, "Preflight check failed");
                 }
                 break;
         }
@@ -163,7 +191,7 @@ public:
     }
 };
 
-class TakeoffState : public StateMachine::State
+class TakeoffState : public StateMachine<DroneState>::State
 {
 private:
     int takeoff_progress = 0;
@@ -187,11 +215,10 @@ public:
         
         if (ctx->z >= 5.0) {
             std::cout << "✅ Takeoff complete - At target altitude" << std::endl;
-            changeToState(DroneState::NAVIGATE_TO_TARGET, "Reached takeoff altitude");
+            changeToState(DroneState::NAVIGATE_TO_TARGET, "Takeoff complete");
         }
-        
-        // Emergency check
-        if (!ctx->battery_ok || !ctx->motors_ok) {
+        else if (!ctx->battery_ok || !ctx->motors_ok)
+        {
             changeToState(DroneState::EMERGENCY, "System failure during takeoff");
         }
     }
@@ -201,7 +228,7 @@ public:
     }
 };
 
-class NavigateToTargetState : public StateMachine::State
+class NavigateToTargetState : public StateMachine<DroneState>::State
 {
 public:
     bool enter() override {
@@ -248,7 +275,7 @@ public:
     }
 };
 
-class HoverAtTargetState : public StateMachine::State
+class HoverAtTargetState : public StateMachine<DroneState>::State
 {
 private:
     int hover_time = 0;
@@ -285,7 +312,7 @@ public:
     }
 };
 
-class ReturnToBaseState : public StateMachine::State
+class ReturnToBaseState : public StateMachine<DroneState>::State
 {
 public:
     bool enter() override {
@@ -330,7 +357,7 @@ public:
     }
 };
 
-class LandingState : public StateMachine::State
+class LandingState : public StateMachine<DroneState>::State
 {
 public:
     bool enter() override {
@@ -358,7 +385,7 @@ public:
     }
 };
 
-class EmergencyState : public StateMachine::State
+class EmergencyState : public StateMachine<DroneState>::State
 {
 private:
     int emergency_time = 0;
@@ -396,7 +423,7 @@ public:
     }
 };
 
-class MissionCompleteState : public StateMachine::State
+class MissionCompleteState : public StateMachine<DroneState>::State
 {
 public:
     bool enter() override {
@@ -431,14 +458,16 @@ public:
 // Demonstration of all features
 void demonstrateAllFeatures() {
     std::cout << "\n" << std::string(80, '=') << std::endl;
-    std::cout << "🚁 COMPREHENSIVE DRONE STATE MACHINE DEMONSTRATION" << std::endl;
-    std::cout << std::string(80, '=') << std::endl;
+    std::cout << "🚁 Advanced Drone Mission State Machine Demo" << std::endl;
+    std::cout << "==============================================" << std::endl;
 
     // Create shared context
     auto droneContext = std::make_shared<DroneContext>();
-    
-    // Create state machine with all features
-    StateMachine droneSM(DroneState::IDLE, "DroneController");
+    droneContext->mission_start_time =
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+
+    // Create the main state machine with template parameter
+    StateMachine<DroneState> droneSM(DroneState::IDLE, "DroneController");
 
     // Add all states
     droneSM.addState<IdleState>(DroneState::IDLE, "Idle")
@@ -458,14 +487,14 @@ void demonstrateAllFeatures() {
         .withFallback(DroneState::EMERGENCY)
 
         // Set logging level
-        .withLogLevel(StateMachine::LogLevel::INFO)
+        .withLogLevel(StateMachine<DroneState>::LogLevel::INFO)
 
         // Configure history tracking
         .withHistorySize(20)
 
         // Add comprehensive callbacks
         .onStateChanged(
-            [](const int &from, const int &to, std::string_view fromName, std::string_view toName,
+            [](const DroneState &from, const DroneState &to, std::string_view fromName, std::string_view toName,
                std::string_view reason)
             {
                 std::cout << "🔄 STATE CHANGE: " << fromName << " ➜ " << toName;
@@ -477,7 +506,7 @@ void demonstrateAllFeatures() {
             })
 
         .onStateUpdated(
-            [](const int &current, std::string_view currentName)
+            [](const DroneState &current, std::string_view currentName)
             {
                 // Example: Log periodic status
                 static int update_count = 0;
@@ -489,7 +518,7 @@ void demonstrateAllFeatures() {
                 }
             })
 
-        .onError([](std::string_view error, const int &currentState)
+        .onError([](std::string_view error, const DroneState &currentState)
                  { std::cout << "❌ ERROR: " << error << " (Current state: " << currentState << ")" << std::endl; });
 
     // Validate configuration
@@ -574,7 +603,7 @@ void demonstrateExceptionHandling() {
     std::cout << std::string(80, '=') << std::endl;
     
     // Create a state that throws exceptions
-    class ExceptionState : public StateMachine::State
+    class ExceptionState : public StateMachine<DroneState>::State
     {
     public:
         bool enter() override {
@@ -584,12 +613,12 @@ void demonstrateExceptionHandling() {
         }
     };
 
-    StateMachine testSM(DroneState::IDLE, "ExceptionTest");
+    StateMachine<DroneState> testSM(DroneState::IDLE, "TestSM");
 
     testSM.addState<IdleState>(DroneState::IDLE, "Idle")
         .addState<ExceptionState>(DroneState::EMERGENCY, "ExceptionState")
-        .withLogLevel(StateMachine::LogLevel::ERROR)
-        .onError([](std::string_view error, const int &state)
+        .withLogLevel(StateMachine<DroneState>::LogLevel::INFO)
+        .onError([](std::string_view error, const DroneState &state)
                  { std::cout << "🚨 Caught error: " << error << std::endl; })
         .start();
 
