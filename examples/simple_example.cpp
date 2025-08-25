@@ -87,7 +87,7 @@ int main() {
         std::cout << "Update " << i+1 << ": ";
         trafficSM.update();
     }
-    
-    std::cout << "\n Simple state machine works perfectly without context!" << std::endl;
+
+    std::cout << "\n Simple state machine works perfectly!" << std::endl;
     return 0;
 }

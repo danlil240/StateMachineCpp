@@ -11,8 +11,8 @@
 		"commands" : 
 		[
 			"add_executable",
-			"add_compile_options",
-			"target_link_libraries"
+			"target_link_libraries",
+			"add_compile_options"
 		],
 		"files" : 
 		[
@@ -26,19 +26,19 @@
 			{
 				"command" : 0,
 				"file" : 0,
-				"line" : 29,
+				"line" : 33,
 				"parent" : 0
 			},
 			{
 				"command" : 1,
 				"file" : 0,
-				"line" : 10,
+				"line" : 34,
 				"parent" : 0
 			},
 			{
 				"command" : 2,
 				"file" : 0,
-				"line" : 30,
+				"line" : 10,
 				"parent" : 0
 			}
 		]
@@ -52,15 +52,15 @@
 					"fragment" : "-g"
 				},
 				{
-					"backtrace" : 2,
+					"backtrace" : 3,
 					"fragment" : "-Wall"
 				},
 				{
-					"backtrace" : 2,
+					"backtrace" : 3,
 					"fragment" : "-Wextra"
 				},
 				{
-					"backtrace" : 2,
+					"backtrace" : 3,
 					"fragment" : "-Wpedantic"
 				},
 				{
@@ -70,7 +70,7 @@
 			"includes" : 
 			[
 				{
-					"backtrace" : 3,
+					"backtrace" : 2,
 					"path" : "/home/daniel/projects/StateMachine/include"
 				}
 			],
@@ -79,7 +79,7 @@
 			{
 				"backtraces" : 
 				[
-					3
+					2
 				],
 				"standard" : "17"
 			},
@@ -87,6 +87,13 @@
 			[
 				0
 			]
+		}
+	],
+	"dependencies" : 
+	[
+		{
+			"backtrace" : 2,
+			"id" : "StateMachineLib::@6890427a1f51a3e7e1df"
 		}
 	],
 	"id" : "example::@6890427a1f51a3e7e1df",
@@ -101,6 +108,11 @@
 			{
 				"fragment" : "",
 				"role" : "flags"
+			},
+			{
+				"backtrace" : 2,
+				"fragment" : "libStateMachineLib.a",
+				"role" : "libraries"
 			}
 		],
 		"language" : "CXX"

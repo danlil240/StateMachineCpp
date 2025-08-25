@@ -51,16 +51,12 @@ if(_IMPORT_PREFIX STREQUAL "/")
 endif()
 
 # Create imported target StateMachineLib
-add_library(StateMachineLib INTERFACE IMPORTED)
+add_library(StateMachineLib STATIC IMPORTED)
 
 set_target_properties(StateMachineLib PROPERTIES
   INTERFACE_COMPILE_FEATURES "cxx_std_17"
   INTERFACE_INCLUDE_DIRECTORIES "${_IMPORT_PREFIX}/include"
 )
-
-if(CMAKE_VERSION VERSION_LESS 3.0.0)
-  message(FATAL_ERROR "This file relies on consumers using CMake 3.0.0 or greater.")
-endif()
 
 # Load information for each installed configuration.
 get_filename_component(_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)

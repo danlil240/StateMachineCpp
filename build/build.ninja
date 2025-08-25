@@ -41,13 +41,59 @@ include CMakeFiles/rules.ninja
 
 cmake_ninja_workdir = /home/daniel/projects/StateMachine/build/
 # =============================================================================
+# Object build statements for STATIC_LIBRARY target StateMachineLib
+
+
+#############################################
+# Order-only phony target for StateMachineLib
+
+build cmake_object_order_depends_target_StateMachineLib: phony || CMakeFiles/StateMachineLib.dir
+
+build CMakeFiles/StateMachineLib.dir/src/StateMachine.cpp.o: CXX_COMPILER__StateMachineLib_Debug /home/daniel/projects/StateMachine/src/StateMachine.cpp || cmake_object_order_depends_target_StateMachineLib
+  DEP_FILE = CMakeFiles/StateMachineLib.dir/src/StateMachine.cpp.o.d
+  FLAGS = -g -Wall -Wextra -Wpedantic -std=gnu++17
+  INCLUDES = -I/home/daniel/projects/StateMachine/include
+  OBJECT_DIR = CMakeFiles/StateMachineLib.dir
+  OBJECT_FILE_DIR = CMakeFiles/StateMachineLib.dir/src
+
+build CMakeFiles/StateMachineLib.dir/src/StateMachineConfig.cpp.o: CXX_COMPILER__StateMachineLib_Debug /home/daniel/projects/StateMachine/src/StateMachineConfig.cpp || cmake_object_order_depends_target_StateMachineLib
+  DEP_FILE = CMakeFiles/StateMachineLib.dir/src/StateMachineConfig.cpp.o.d
+  FLAGS = -g -Wall -Wextra -Wpedantic -std=gnu++17
+  INCLUDES = -I/home/daniel/projects/StateMachine/include
+  OBJECT_DIR = CMakeFiles/StateMachineLib.dir
+  OBJECT_FILE_DIR = CMakeFiles/StateMachineLib.dir/src
+
+build CMakeFiles/StateMachineLib.dir/src/StateMachineLogger.cpp.o: CXX_COMPILER__StateMachineLib_Debug /home/daniel/projects/StateMachine/src/StateMachineLogger.cpp || cmake_object_order_depends_target_StateMachineLib
+  DEP_FILE = CMakeFiles/StateMachineLib.dir/src/StateMachineLogger.cpp.o.d
+  FLAGS = -g -Wall -Wextra -Wpedantic -std=gnu++17
+  INCLUDES = -I/home/daniel/projects/StateMachine/include
+  OBJECT_DIR = CMakeFiles/StateMachineLib.dir
+  OBJECT_FILE_DIR = CMakeFiles/StateMachineLib.dir/src
+
+
+# =============================================================================
+# Link build statements for STATIC_LIBRARY target StateMachineLib
+
+
+#############################################
+# Link the static library libStateMachineLib.a
+
+build libStateMachineLib.a: CXX_STATIC_LIBRARY_LINKER__StateMachineLib_Debug CMakeFiles/StateMachineLib.dir/src/StateMachine.cpp.o CMakeFiles/StateMachineLib.dir/src/StateMachineConfig.cpp.o CMakeFiles/StateMachineLib.dir/src/StateMachineLogger.cpp.o
+  LANGUAGE_COMPILE_FLAGS = -g
+  OBJECT_DIR = CMakeFiles/StateMachineLib.dir
+  POST_BUILD = :
+  PRE_LINK = :
+  TARGET_FILE = libStateMachineLib.a
+  TARGET_PDB = StateMachineLib.a.dbg
+
+# =============================================================================
 # Object build statements for EXECUTABLE target simple_example
 
 
 #############################################
 # Order-only phony target for simple_example
 
-build cmake_object_order_depends_target_simple_example: phony || CMakeFiles/simple_example.dir
+build cmake_object_order_depends_target_simple_example: phony || cmake_object_order_depends_target_StateMachineLib
 
 build CMakeFiles/simple_example.dir/examples/simple_example.cpp.o: CXX_COMPILER__simple_example_Debug /home/daniel/projects/StateMachine/examples/simple_example.cpp || cmake_object_order_depends_target_simple_example
   DEP_FILE = CMakeFiles/simple_example.dir/examples/simple_example.cpp.o.d
@@ -64,8 +110,9 @@ build CMakeFiles/simple_example.dir/examples/simple_example.cpp.o: CXX_COMPILER_
 #############################################
 # Link the executable simple_example
 
-build simple_example: CXX_EXECUTABLE_LINKER__simple_example_Debug CMakeFiles/simple_example.dir/examples/simple_example.cpp.o
+build simple_example: CXX_EXECUTABLE_LINKER__simple_example_Debug CMakeFiles/simple_example.dir/examples/simple_example.cpp.o | libStateMachineLib.a || libStateMachineLib.a
   FLAGS = -g
+  LINK_LIBRARIES = libStateMachineLib.a
   OBJECT_DIR = CMakeFiles/simple_example.dir
   POST_BUILD = :
   PRE_LINK = :
@@ -79,7 +126,7 @@ build simple_example: CXX_EXECUTABLE_LINKER__simple_example_Debug CMakeFiles/sim
 #############################################
 # Order-only phony target for example
 
-build cmake_object_order_depends_target_example: phony || CMakeFiles/example.dir
+build cmake_object_order_depends_target_example: phony || cmake_object_order_depends_target_StateMachineLib
 
 build CMakeFiles/example.dir/examples/example.cpp.o: CXX_COMPILER__example_Debug /home/daniel/projects/StateMachine/examples/example.cpp || cmake_object_order_depends_target_example
   DEP_FILE = CMakeFiles/example.dir/examples/example.cpp.o.d
@@ -96,8 +143,9 @@ build CMakeFiles/example.dir/examples/example.cpp.o: CXX_COMPILER__example_Debug
 #############################################
 # Link the executable example
 
-build example: CXX_EXECUTABLE_LINKER__example_Debug CMakeFiles/example.dir/examples/example.cpp.o
+build example: CXX_EXECUTABLE_LINKER__example_Debug CMakeFiles/example.dir/examples/example.cpp.o | libStateMachineLib.a || libStateMachineLib.a
   FLAGS = -g
+  LINK_LIBRARIES = libStateMachineLib.a
   OBJECT_DIR = CMakeFiles/example.dir
   POST_BUILD = :
   PRE_LINK = :
@@ -111,7 +159,7 @@ build example: CXX_EXECUTABLE_LINKER__example_Debug CMakeFiles/example.dir/examp
 #############################################
 # Order-only phony target for sm_test
 
-build cmake_object_order_depends_target_sm_test: phony || CMakeFiles/sm_test.dir
+build cmake_object_order_depends_target_sm_test: phony || cmake_object_order_depends_target_StateMachineLib
 
 build CMakeFiles/sm_test.dir/tests/test.cpp.o: CXX_COMPILER__sm_test_Debug /home/daniel/projects/StateMachine/tests/test.cpp || cmake_object_order_depends_target_sm_test
   DEP_FILE = CMakeFiles/sm_test.dir/tests/test.cpp.o.d
@@ -128,8 +176,9 @@ build CMakeFiles/sm_test.dir/tests/test.cpp.o: CXX_COMPILER__sm_test_Debug /home
 #############################################
 # Link the executable sm_test
 
-build sm_test: CXX_EXECUTABLE_LINKER__sm_test_Debug CMakeFiles/sm_test.dir/tests/test.cpp.o
+build sm_test: CXX_EXECUTABLE_LINKER__sm_test_Debug CMakeFiles/sm_test.dir/tests/test.cpp.o | libStateMachineLib.a || libStateMachineLib.a
   FLAGS = -g
+  LINK_LIBRARIES = libStateMachineLib.a
   OBJECT_DIR = CMakeFiles/sm_test.dir
   POST_BUILD = :
   PRE_LINK = :
@@ -216,6 +265,8 @@ build install/strip: phony CMakeFiles/install/strip.util
 # =============================================================================
 # Target aliases.
 
+build StateMachineLib: phony libStateMachineLib.a
+
 # =============================================================================
 # Folder targets.
 
@@ -224,7 +275,7 @@ build install/strip: phony CMakeFiles/install/strip.util
 #############################################
 # Folder: /home/daniel/projects/StateMachine/build
 
-build all: phony simple_example example sm_test
+build all: phony libStateMachineLib.a simple_example example sm_test
 
 # =============================================================================
 # Built-in targets

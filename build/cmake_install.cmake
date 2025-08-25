@@ -43,6 +43,10 @@ if(NOT DEFINED CMAKE_OBJDUMP)
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "/home/daniel/projects/StateMachine/build/libStateMachineLib.a")
+endif()
+
+if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include" TYPE DIRECTORY FILES "/home/daniel/projects/StateMachine/include/")
 endif()
 
@@ -60,6 +64,9 @@ if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_
     endif()
   endif()
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/StateMachineLib" TYPE FILE FILES "/home/daniel/projects/StateMachine/build/CMakeFiles/Export/lib/cmake/StateMachineLib/StateMachineLibConfig.cmake")
+  if("${CMAKE_INSTALL_CONFIG_NAME}" MATCHES "^([Dd][Ee][Bb][Uu][Gg])$")
+    file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/StateMachineLib" TYPE FILE FILES "/home/daniel/projects/StateMachine/build/CMakeFiles/Export/lib/cmake/StateMachineLib/StateMachineLibConfig-debug.cmake")
+  endif()
 endif()
 
 if(CMAKE_INSTALL_COMPONENT)

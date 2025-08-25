@@ -7,7 +7,7 @@
 				{
 					"build" : ".",
 					"hasInstallRule" : true,
-					"jsonFile" : "directory-.-Debug-777d2add6ff8f368a13c.json",
+					"jsonFile" : "directory-.-Debug-a806cddf990a4eb49466.json",
 					"minimumCMakeVersion" : 
 					{
 						"string" : "3.16"
@@ -18,7 +18,8 @@
 					[
 						0,
 						1,
-						2
+						2,
+						3
 					]
 				}
 			],
@@ -35,7 +36,8 @@
 					[
 						0,
 						1,
-						2
+						2,
+						3
 					]
 				}
 			],
@@ -43,22 +45,29 @@
 			[
 				{
 					"directoryIndex" : 0,
+					"id" : "StateMachineLib::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-StateMachineLib-Debug-8f3954084cb14611e3f7.json",
+					"name" : "StateMachineLib",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
 					"id" : "example::@6890427a1f51a3e7e1df",
-					"jsonFile" : "target-example-Debug-11829e3a593661cef164.json",
+					"jsonFile" : "target-example-Debug-97fa2f07ee7761ad78a6.json",
 					"name" : "example",
 					"projectIndex" : 0
 				},
 				{
 					"directoryIndex" : 0,
 					"id" : "simple_example::@6890427a1f51a3e7e1df",
-					"jsonFile" : "target-simple_example-Debug-9622558c2f31830749d0.json",
+					"jsonFile" : "target-simple_example-Debug-2cc75d41e2ceb4fb3163.json",
 					"name" : "simple_example",
 					"projectIndex" : 0
 				},
 				{
 					"directoryIndex" : 0,
 					"id" : "sm_test::@6890427a1f51a3e7e1df",
-					"jsonFile" : "target-sm_test-Debug-ee6d7789aaa6f4d88f55.json",
+					"jsonFile" : "target-sm_test-Debug-c2022ecd2ece5ad1644d.json",
 					"name" : "sm_test",
 					"projectIndex" : 0
 				}

@@ -8,6 +8,7 @@ set(CMAKE_IMPORT_FILE_VERSION 1)
 # Import target "StateMachineLib" for configuration "Debug"
 set_property(TARGET StateMachineLib APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
 set_target_properties(StateMachineLib PROPERTIES
+  IMPORTED_LINK_INTERFACE_LANGUAGES_DEBUG "CXX"
   IMPORTED_LOCATION_DEBUG "${_IMPORT_PREFIX}/lib/libStateMachineLib.a"
   )
 

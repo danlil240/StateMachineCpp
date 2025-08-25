@@ -17,13 +17,19 @@
 			{
 				"command" : 0,
 				"file" : 0,
-				"line" : 46,
+				"line" : 43,
 				"parent" : 0
 			},
 			{
 				"command" : 0,
 				"file" : 0,
-				"line" : 48,
+				"line" : 50,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 52,
 				"parent" : 0
 			}
 		]
@@ -32,6 +38,18 @@
 	[
 		{
 			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "lib",
+			"paths" : 
+			[
+				"libStateMachineLib.a"
+			],
+			"targetId" : "StateMachineLib::@6890427a1f51a3e7e1df",
+			"targetIndex" : 0,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 2,
 			"component" : "Unspecified",
 			"destination" : "include",
 			"paths" : 
@@ -44,7 +62,7 @@
 			"type" : "directory"
 		},
 		{
-			"backtrace" : 2,
+			"backtrace" : 3,
 			"component" : "Unspecified",
 			"destination" : "lib/cmake/StateMachineLib",
 			"exportName" : "StateMachineLibTargets",

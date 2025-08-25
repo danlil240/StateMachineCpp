@@ -1,6 +1,21 @@
 [
 {
   "directory": "/home/daniel/projects/StateMachine/build",
+  "command": "/usr/bin/g++-12 -I/home/daniel/projects/StateMachine/include -g -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/StateMachineLib.dir/src/StateMachine.cpp.o -c /home/daniel/projects/StateMachine/src/StateMachine.cpp",
+  "file": "/home/daniel/projects/StateMachine/src/StateMachine.cpp"
+},
+{
+  "directory": "/home/daniel/projects/StateMachine/build",
+  "command": "/usr/bin/g++-12 -I/home/daniel/projects/StateMachine/include -g -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/StateMachineLib.dir/src/StateMachineConfig.cpp.o -c /home/daniel/projects/StateMachine/src/StateMachineConfig.cpp",
+  "file": "/home/daniel/projects/StateMachine/src/StateMachineConfig.cpp"
+},
+{
+  "directory": "/home/daniel/projects/StateMachine/build",
+  "command": "/usr/bin/g++-12 -I/home/daniel/projects/StateMachine/include -g -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/StateMachineLib.dir/src/StateMachineLogger.cpp.o -c /home/daniel/projects/StateMachine/src/StateMachineLogger.cpp",
+  "file": "/home/daniel/projects/StateMachine/src/StateMachineLogger.cpp"
+},
+{
+  "directory": "/home/daniel/projects/StateMachine/build",
   "command": "/usr/bin/g++-12 -I/home/daniel/projects/StateMachine/include -g -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/simple_example.dir/examples/simple_example.cpp.o -c /home/daniel/projects/StateMachine/examples/simple_example.cpp",
   "file": "/home/daniel/projects/StateMachine/examples/simple_example.cpp"
 },

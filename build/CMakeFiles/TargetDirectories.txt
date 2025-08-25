@@ -1,3 +1,4 @@
+/home/daniel/projects/StateMachine/build/CMakeFiles/StateMachineLib.dir
 /home/daniel/projects/StateMachine/build/CMakeFiles/simple_example.dir
 /home/daniel/projects/StateMachine/build/CMakeFiles/example.dir
 /home/daniel/projects/StateMachine/build/CMakeFiles/sm_test.dir
