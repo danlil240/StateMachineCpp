@@ -28,11 +28,10 @@
  * - State history tracking
  * - Configurable logging
  */
-template <typename StateID>
 class StateMachine
 {
 public:
-    static_assert(std::is_trivially_copyable_v<StateID>, "StateID must be trivially copyable");
+    using StateID = int;
     /**
      * @brief Base state class that all states must inherit from
      */
@@ -92,7 +91,7 @@ public:
             {
                 throw std::runtime_error("State not associated with a state machine");
             }
-            return stateMachine->template getContext<T>();
+            return stateMachine->getContext<T>();
         }
 
     private:

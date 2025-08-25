@@ -21,7 +21,8 @@
 #include <random>
 
 // Drone mission states
-enum class DroneState {
+enum DroneState
+{
     IDLE,
     PREFLIGHT_CHECK,
     TAKEOFF,
@@ -69,7 +70,8 @@ struct DroneContext {
 
 // State implementations demonstrating different patterns
 
-class IdleState : public StateMachine<DroneState>::State {
+class IdleState : public StateMachine::State
+{
 public:
     bool enter() override {
         std::cout << "🚁 Drone is IDLE - Waiting for mission command" << std::endl;
@@ -104,7 +106,8 @@ public:
     }
 };
 
-class PreflightCheckState : public StateMachine<DroneState>::State {
+class PreflightCheckState : public StateMachine::State
+{
 private:
     int check_counter = 0;
     std::mt19937 rng{std::random_device{}()};
@@ -160,7 +163,8 @@ public:
     }
 };
 
-class TakeoffState : public StateMachine<DroneState>::State {
+class TakeoffState : public StateMachine::State
+{
 private:
     int takeoff_progress = 0;
     
@@ -197,7 +201,8 @@ public:
     }
 };
 
-class NavigateToTargetState : public StateMachine<DroneState>::State {
+class NavigateToTargetState : public StateMachine::State
+{
 public:
     bool enter() override {
         auto ctx = getContext<DroneContext>();
@@ -243,7 +248,8 @@ public:
     }
 };
 
-class HoverAtTargetState : public StateMachine<DroneState>::State {
+class HoverAtTargetState : public StateMachine::State
+{
 private:
     int hover_time = 0;
     
@@ -279,7 +285,8 @@ public:
     }
 };
 
-class ReturnToBaseState : public StateMachine<DroneState>::State {
+class ReturnToBaseState : public StateMachine::State
+{
 public:
     bool enter() override {
         auto ctx = getContext<DroneContext>();
@@ -323,7 +330,8 @@ public:
     }
 };
 
-class LandingState : public StateMachine<DroneState>::State {
+class LandingState : public StateMachine::State
+{
 public:
     bool enter() override {
         std::cout << "🛬 Starting landing sequence..." << std::endl;
@@ -350,7 +358,8 @@ public:
     }
 };
 
-class EmergencyState : public StateMachine<DroneState>::State {
+class EmergencyState : public StateMachine::State
+{
 private:
     int emergency_time = 0;
     
@@ -387,7 +396,8 @@ public:
     }
 };
 
-class MissionCompleteState : public StateMachine<DroneState>::State {
+class MissionCompleteState : public StateMachine::State
+{
 public:
     bool enter() override {
         auto ctx = getContext<DroneContext>();
@@ -428,8 +438,8 @@ void demonstrateAllFeatures() {
     auto droneContext = std::make_shared<DroneContext>();
     
     // Create state machine with all features
-    StateMachine<DroneState> droneSM(DroneState::IDLE, "DroneController");
-    
+    StateMachine droneSM(DroneState::IDLE, "DroneController");
+
     // Add all states
     droneSM.addState<IdleState>(DroneState::IDLE, "Idle")
         .addState<PreflightCheckState>(DroneState::PREFLIGHT_CHECK, "PreflightCheck")
@@ -448,14 +458,14 @@ void demonstrateAllFeatures() {
         .withFallback(DroneState::EMERGENCY)
 
         // Set logging level
-        .withLogLevel(StateMachine<DroneState>::LogLevel::INFO)
+        .withLogLevel(StateMachine::LogLevel::INFO)
 
         // Configure history tracking
         .withHistorySize(20)
 
         // Add comprehensive callbacks
         .onStateChanged(
-            [](const DroneState &from, const DroneState &to, std::string_view fromName, std::string_view toName,
+            [](const int &from, const int &to, std::string_view fromName, std::string_view toName,
                std::string_view reason)
             {
                 std::cout << "🔄 STATE CHANGE: " << fromName << " ➜ " << toName;
@@ -467,7 +477,7 @@ void demonstrateAllFeatures() {
             })
 
         .onStateUpdated(
-            [](const DroneState &current, std::string_view currentName)
+            [](const int &current, std::string_view currentName)
             {
                 // Example: Log periodic status
                 static int update_count = 0;
@@ -478,13 +488,10 @@ void demonstrateAllFeatures() {
                               << std::endl;
                 }
             })
-        
-        
-        .onError([](std::string_view error, const DroneState& currentState) {
-            std::cout << "❌ ERROR: " << error << " (Current state: " 
-                      << static_cast<int>(currentState) << ")" << std::endl;
-        });
-    
+
+        .onError([](std::string_view error, const int &currentState)
+                 { std::cout << "❌ ERROR: " << error << " (Current state: " << currentState << ")" << std::endl; });
+
     // Validate configuration
     std::cout << "\n🔍 Validating state machine configuration..." << std::endl;
     if (droneSM.validate()) {
@@ -567,7 +574,8 @@ void demonstrateExceptionHandling() {
     std::cout << std::string(80, '=') << std::endl;
     
     // Create a state that throws exceptions
-    class ExceptionState : public StateMachine<DroneState>::State {
+    class ExceptionState : public StateMachine::State
+    {
     public:
         bool enter() override {
             std::cout << "💥 Throwing exception in enter()" << std::endl;
@@ -575,18 +583,16 @@ void demonstrateExceptionHandling() {
             return true;
         }
     };
-    
-    StateMachine<DroneState> testSM(DroneState::IDLE, "ExceptionTest");
-    
-    testSM
-        .addState<IdleState>(DroneState::IDLE, "Idle")
+
+    StateMachine testSM(DroneState::IDLE, "ExceptionTest");
+
+    testSM.addState<IdleState>(DroneState::IDLE, "Idle")
         .addState<ExceptionState>(DroneState::EMERGENCY, "ExceptionState")
-        .withLogLevel(StateMachine<DroneState>::LogLevel::ERROR)
-        .onError([](std::string_view error, const DroneState& state) {
-            std::cout << "🚨 Caught error: " << error << std::endl;
-        })
+        .withLogLevel(StateMachine::LogLevel::ERROR)
+        .onError([](std::string_view error, const int &state)
+                 { std::cout << "🚨 Caught error: " << error << std::endl; })
         .start();
-    
+
     std::cout << "Current state: " << testSM.getCurrentStateName() << std::endl;
     
     // Try to transition to exception state
