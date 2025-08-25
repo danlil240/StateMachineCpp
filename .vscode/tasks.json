@@ -1,0 +1,207 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "CMake: Configure",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-S", ".",
+                "-B", "build",
+                "-DCMAKE_BUILD_TYPE=Debug",
+                "-DBUILD_TESTING=ON",
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+            ],
+            "group": "build",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },                "/home/daniel/orev_ws/install/*/include/**",
+                "/home/daniel/orev_ws/src/**/include/**"
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "CMake: Build Release",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-S", ".",
+                "-B", "build_release",
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DBUILD_TESTING=ON",
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+                "&&",
+                "cmake",
+                "--build", "build_release",
+                "--parallel", "4"
+            ],
+            "group": "build",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "CMake: Clean",
+            "type": "shell",
+            "command": "rm",
+            "args": [
+                "-rf",
+                "build",
+                "build_release"
+            ],
+            "group": "build",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            }
+        },
+        {
+            "label": "Run: Tests",
+            "type": "shell",
+            "command": "ctest",
+            "args": [
+                "--test-dir", "build",
+                "--output-on-failure"
+            ],
+            "group": "test",
+            "dependsOn": "CMake: Build",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Run: Example",
+            "type": "shell",
+            "command": "./build/state_machine_example",
+            "group": "test",
+            "dependsOn": "CMake: Build",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Run: Simple Example",
+            "type": "shell",
+            "command": "./build/simple_example",
+            "group": "test",
+            "dependsOn": "CMake: Build",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "ROS: Colcon Build",
+            "type": "shell",
+            "command": "colcon",
+            "args": [
+                "build",
+                "--packages-select",
+                "ros_common2",
+                "--cmake-args",
+                "-DCMAKE_BUILD_TYPE=Debug",
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+            ],
+            "group": "build",
+            "options": {
+                "cwd": "/home/daniel/orev_ws"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "ROS: Source Setup",
+            "type": "shell",
+            "command": "source",
+            "args": [
+                "/opt/ros/humble/setup.bash",
+                "&&",
+                "source",
+                "/home/daniel/orev_ws/install/setup.bash"
+            ],
+            "group": "build",
+            "options": {
+                "cwd": "/home/daniel/orev_ws"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "silent",
+                "focus": false,
+                "panel": "shared"
+            }
+        }
+    ]
+}

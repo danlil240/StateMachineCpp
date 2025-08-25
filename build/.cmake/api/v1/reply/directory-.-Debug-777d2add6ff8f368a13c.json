@@ -1,0 +1,70 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"install"
+		],
+		"files" : 
+		[
+			"CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 46,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 48,
+				"parent" : 0
+			}
+		]
+	},
+	"installers" : 
+	[
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "include",
+			"paths" : 
+			[
+				{
+					"from" : "include",
+					"to" : "."
+				}
+			],
+			"type" : "directory"
+		},
+		{
+			"backtrace" : 2,
+			"component" : "Unspecified",
+			"destination" : "lib/cmake/StateMachineLib",
+			"exportName" : "StateMachineLibTargets",
+			"exportTargets" : 
+			[
+				{
+					"id" : "StateMachineLib::@6890427a1f51a3e7e1df",
+					"index" : 0
+				}
+			],
+			"paths" : 
+			[
+				"CMakeFiles/Export/lib/cmake/StateMachineLib/StateMachineLibConfig.cmake"
+			],
+			"type" : "export"
+		}
+	],
+	"paths" : 
+	{
+		"build" : ".",
+		"source" : "."
+	}
+}

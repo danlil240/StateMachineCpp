@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/include/**",
+                "${workspaceFolder}/**",
+                "/usr/include/**",
+                "/usr/local/include/**"
+            ],
+            "defines": [
+                "_GNU_SOURCE",
+                "__cplusplus=201703L"
+            ],
+            "compilerPath": "/usr/bin/g++",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-x64",
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+            "configurationProvider": "ms-vscode.cmake-tools"
+        }
+    ],
+    "version": 4
+}

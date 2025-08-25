@@ -1,0 +1,17 @@
+[
+{
+  "directory": "/home/daniel/projects/StateMachine/build",
+  "command": "/usr/bin/g++-12 -I/home/daniel/projects/StateMachine/include -g -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/simple_example.dir/examples/simple_example.cpp.o -c /home/daniel/projects/StateMachine/examples/simple_example.cpp",
+  "file": "/home/daniel/projects/StateMachine/examples/simple_example.cpp"
+},
+{
+  "directory": "/home/daniel/projects/StateMachine/build",
+  "command": "/usr/bin/g++-12 -I/home/daniel/projects/StateMachine/include -g -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/example.dir/examples/example.cpp.o -c /home/daniel/projects/StateMachine/examples/example.cpp",
+  "file": "/home/daniel/projects/StateMachine/examples/example.cpp"
+},
+{
+  "directory": "/home/daniel/projects/StateMachine/build",
+  "command": "/usr/bin/g++-12 -I/home/daniel/projects/StateMachine/include -g -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/sm_test.dir/tests/test.cpp.o -c /home/daniel/projects/StateMachine/tests/test.cpp",
+  "file": "/home/daniel/projects/StateMachine/tests/test.cpp"
+}
+]
