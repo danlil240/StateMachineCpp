@@ -9,7 +9,7 @@
 // Simple state machine example
 enum TestState { A, B, C };
 
-class StateA : public StateMachine::State
+class StateA : public StateMachine<TestState>::State
 {
 public:
     bool enter() override {
@@ -18,7 +18,7 @@ public:
     }
 };
 
-class StateB : public StateMachine::State
+class StateB : public StateMachine<TestState>::State
 {
 public:
     bool enter() override {
@@ -27,7 +27,7 @@ public:
     }
 };
 
-class StateC : public StateMachine::State
+class StateC : public StateMachine<TestState>::State
 {
 public:
     bool enter() override {
@@ -40,12 +40,12 @@ int main() {
     std::cout << "=== Chaining Style (Fluent API) ===" << std::endl;
     
     // Chaining style - returning references for fluent API
-    StateMachine chainingSM(TestState::A, "ChainingExample");
+    StateMachine<TestState> chainingSM(TestState::A, "ChainingExample");
 
     chainingSM.addState<StateA>(TestState::A, "State A")
         .addState<StateB>(TestState::B, "State B")
         .addState<StateC>(TestState::C, "State C")
-        .withLogLevel(StateMachine::LogLevel::INFO)
+        .withLogLevel(StateMachine<TestState>::LogLevel::INFO)
         .start();
 
     std::cout << "Current state: " << chainingSM.getCurrentStateName() << std::endl;
@@ -53,12 +53,12 @@ int main() {
     std::cout << "\n=== Non-chaining Style ===" << std::endl;
     
     // Non-chaining style - using addState without chaining (ignoring return value)
-    StateMachine nonChainingSM(TestState::A, "NonChainingExample");
+    StateMachine<TestState> nonChainingSM(TestState::A, "NonChainingExample");
 
     nonChainingSM.addState<StateA>(TestState::A, "State A");  // Ignore return value
     nonChainingSM.addState<StateB>(TestState::B, "State B");  // Ignore return value
-    nonChainingSM.addState<StateC>(
-        TestState::C, "State C"); // Ignore return value    nonChainingSM.withLogLevel(StateMachine::LogLevel::INFO);
+    nonChainingSM.addState<StateC>(TestState::C, "State C");  // Ignore return value
+    nonChainingSM.withLogLevel(StateMachine<TestState>::LogLevel::INFO);
     nonChainingSM.start();
     
     std::cout << "Current state: " << nonChainingSM.getCurrentStateName() << std::endl;

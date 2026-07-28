@@ -27,7 +27,10 @@ add_executable(simple_example examples/simple_example.cpp)
 target_link_libraries(simple_example StateMachineLib)
 
 add_executable(example examples/example.cpp)
-target_link_libraries(example StateMachineLib)  
+target_link_libraries(example StateMachineLib)
+
+add_executable(non_chaining_example examples/non_chaining_example.cpp)
+target_link_libraries(non_chaining_example StateMachineLib)
 
 # Tests
 enable_testing()

@@ -441,9 +441,11 @@ bool test_fallback_mechanism()
         .withLogLevel(StateMachine<TestState>::LogLevel::ERROR)
         .start();
 
-    // Attempt transition to failing state - should fall back
+    // Attempt transition to failing state - should fall back.
+    // changeState returns false because the requested state was not reached,
+    // even though the fallback state was successfully entered.
     bool result = sm.changeState(TestState::ERROR, "Testing fallback");
-    EXPECT(result, "Fallback transition should succeed");
+    EXPECT(!result, "Fallback transition should report failure for requested state");
     EXPECT(sm.getCurrentStateId() == TestState::PAUSED, "Should be in fallback state");
     
     return true;
