@@ -32,11 +32,28 @@ target_link_libraries(example StateMachineLib)
 add_executable(non_chaining_example examples/non_chaining_example.cpp)
 target_link_libraries(non_chaining_example StateMachineLib)
 
+add_executable(regions_example examples/regions_example.cpp)
+target_link_libraries(regions_example StateMachineLib)
+
+add_executable(nested_example examples/nested_example.cpp)
+target_link_libraries(nested_example StateMachineLib)
+
 # Tests
 enable_testing()
+
 add_executable(sm_test tests/test.cpp)
 target_link_libraries(sm_test StateMachineLib)
 add_test(NAME sm_test COMMAND sm_test)
+
+add_executable(sm_regions_test tests/state_machine_regions_test.cpp)
+target_link_libraries(sm_regions_test StateMachineLib)
+add_test(NAME sm_regions_test COMMAND sm_regions_test)
+
+# Google Test based tests
+find_package(GTest REQUIRED)
+add_executable(sm_gtest tests/StateMachineTest.cpp)
+target_link_libraries(sm_gtest StateMachineLib GTest::gtest GTest::gtest_main)
+add_test(NAME sm_gtest COMMAND sm_gtest)
 
 # Installation
 install(TARGETS StateMachineLib

@@ -16,6 +16,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <type_traits>
 #include <typeindex>
 #include <typeinfo>
@@ -329,6 +330,24 @@ public:
                  : nullptr;
     }
 
+    // ── Logging & conditional transition helpers ───────────────────
+
+    /**
+     * @brief Log a message through the owning machine's logging infrastructure
+     *
+     * The message respects withLogLevel() and withLogSink(), and is formatted
+     * with the machine's name and color. Use this instead of std::cout so state
+     * output is consistent with machine logging.
+     *
+     * @code  log(LogLevel::INFO, "Engine started");  @endcode
+     */
+    void log(LogLevel level, std::string_view message) const {
+      if (stateMachine) {
+        stateMachine->log(level, message);
+      }
+    }
+
+
   private:
     friend class StateMachine;
     StateMachine *stateMachine = nullptr;
@@ -519,6 +538,10 @@ private:
   // Type-safe context storage
   std::shared_ptr<void> userContext;
   std::type_index contextType{typeid(void)};
+
+  // Background run-thread support
+  std::atomic<bool> runThreadRunning{false};
+  std::thread runThread;
 
   /**
    * @brief True when a record at this level would actually be emitted.
@@ -1344,6 +1367,7 @@ public:
    * body.
    */
   ~StateMachine() {
+    stopThread();
     stop();
     std::lock_guard<std::recursive_mutex> lock(stateMutex);
     for (auto &entry : states) {
@@ -1824,6 +1848,69 @@ public:
     return withRegion<ChildStateID>(
         parentStateId, DEFAULT_REGION_NAME, initialChild,
         std::forward<ConfigFn>(configureFn), true);
+  }
+
+  /**
+   * @brief Attach a pre-built child state machine to an existing parent state.
+   *
+   * Unlike withSubStates(), which creates and configures the child SM via a
+   * lambda (requiring .template syntax and causing deep nesting), attachSub()
+   * accepts an independently constructed StateMachine. This enables a flat,
+   * bottom-up construction style:
+   *
+   * @code
+   *   auto core = sm::make<CoreState>(CoreState::INIT, "Core");
+   *   core->addState<CoreInitState>(CoreState::INIT, "Init")
+   *       .addState<CoreActiveState>(CoreState::ACTIVE, "Active");
+   *
+   *   sm.addState<RunningState>(Main::RUNNING, "Running")
+   *     .attachSub(Main::RUNNING, std::move(core));
+   * @endcode
+   *
+   * @tparam ChildStateID  Enum type for the child states
+   * @param parentStateId  The parent state that will own the child SM
+   * @param childMachine   A pre-built, fully configured child state machine
+   * @return StateMachine& This state machine for method chaining
+   */
+  template <typename ChildStateID>
+  StateMachine &attachSub(const StateID &parentStateId,
+                          std::unique_ptr<StateMachine<ChildStateID>> childMachine) {
+    std::lock_guard<std::recursive_mutex> lock(stateMutex);
+
+    if (isInitialized) {
+      log(LogLevel::ERROR, Color::RED,
+          "attachSub: sub-machine topology cannot change after start()");
+      return *this;
+    }
+    if (!childMachine) {
+      log(LogLevel::ERROR, Color::RED,
+          "attachSub: child machine must not be null");
+      return *this;
+    }
+
+    auto parent = states.find(parentStateId);
+    if (parent == states.end()) {
+      log(LogLevel::ERROR, Color::RED,
+          "attachSub: parent state not found");
+      return *this;
+    }
+    if (findRegion(parent->second, DEFAULT_REGION_NAME)) {
+      log(LogLevel::ERROR, Color::RED,
+          "attachSub: parent state already has a default sub-machine");
+      return *this;
+    }
+
+    auto regionMachine =
+        std::make_unique<SubMachineImpl<ChildStateID>>(std::move(childMachine));
+    regionMachine->applyLogConfig(logLevel.load(), logSink, useColors);
+    regionMachine->applyClock(clockFn);
+    parent->second.regions.emplace_back(std::string(DEFAULT_REGION_NAME),
+                                        std::move(regionMachine), true);
+
+    log(LogLevel::DEBUG, Color::CYAN,
+        std::string("Attached pre-built sub-machine to ") +
+            parent->second.name);
+    return *this;
   }
 
   /**
@@ -2522,6 +2609,7 @@ public:
    * machine as not initialized. Safe to call when already stopped.
    */
   void stop() {
+    stopThread();
     std::lock_guard<std::recursive_mutex> lock(stateMutex);
     if (!isInitialized) {
       return;
@@ -2729,6 +2817,269 @@ public:
     std::lock_guard<std::recursive_mutex> lock(stateMutex);
     return isInitialized;
   }
+
+  // ──────────────────────────────────────────────────────────────────
+  //  Convenience helpers
+  // ──────────────────────────────────────────────────────────────────
+
+  /**
+   * @brief Check if the machine is currently in the given state
+   *
+   * Shorthand for getCurrentStateId() == id. Thread-safe.
+   *
+   * @code  if (sm.isInState(DroneState::IDLE)) { ... }  @endcode
+   */
+  bool isInState(const StateID &id) const {
+    std::lock_guard<std::recursive_mutex> lock(stateMutex);
+    return currentStateId == id;
+  }
+
+  /**
+   * @brief Get the name of any registered state by ID
+   *
+   * Unlike getCurrentStateName(), this works for any registered state,
+   * not just the active one.
+   */
+  std::string getStateName(const StateID &id) const {
+    std::lock_guard<std::recursive_mutex> lock(stateMutex);
+    auto it = states.find(id);
+    return it != states.end() ? it->second.name : "Unknown";
+  }
+
+  /**
+   * @brief Get all registered state IDs
+   *
+   * Returned in unspecified order. Useful for introspection and debugging.
+   */
+  std::vector<StateID> getRegisteredStateIds() const {
+    std::lock_guard<std::recursive_mutex> lock(stateMutex);
+    std::vector<StateID> ids;
+    ids.reserve(states.size());
+    for (const auto &entry : states) {
+      ids.push_back(entry.first);
+    }
+    return ids;
+  }
+
+  /**
+   * @brief Get the machine's name
+   */
+  std::string getMachineName() const {
+    std::lock_guard<std::recursive_mutex> lock(stateMutex);
+    return machineName;
+  }
+
+  /**
+   * @brief Get the initial state ID
+   */
+  StateID getInitialStateId() const {
+    std::lock_guard<std::recursive_mutex> lock(stateMutex);
+    return initialStateId;
+  }
+
+  /**
+   * @brief Check if a fallback state is configured
+   */
+  bool hasFallback() const {
+    std::lock_guard<std::recursive_mutex> lock(stateMutex);
+    return fallbackStateId.has_value();
+  }
+
+  /**
+   * @brief Get the configured fallback state ID, if any
+   */
+  std::optional<StateID> getFallbackStateId() const {
+    std::lock_guard<std::recursive_mutex> lock(stateMutex);
+    return fallbackStateId;
+  }
+
+  /**
+   * @brief Whether the machine is stopped (inverse of isReady())
+   */
+  bool isStopped() const {
+    std::lock_guard<std::recursive_mutex> lock(stateMutex);
+    return !isInitialized;
+  }
+
+  /**
+   * @brief Number of entries currently in the transition history
+   */
+  size_t getHistorySize() const {
+    std::lock_guard<std::recursive_mutex> lock(stateMutex);
+    return stateHistory.size();
+  }
+
+  /**
+   * @brief Clear the transition history without resetting the machine
+   *
+   * Useful when reusing a long-running machine for a new mission and the old
+   * history is no longer relevant.
+   */
+  void clearHistory() {
+    std::lock_guard<std::recursive_mutex> lock(stateMutex);
+    stateHistory.clear();
+  }
+
+  /**
+   * @brief Log a message through the machine's logging infrastructure
+   *
+   * Color is auto-selected based on the log level. Use this from application
+   * code (or from State subclasses via State::log()) to emit messages that
+   * respect withLogLevel() and withLogSink().
+   *
+   * @code  sm.log(LogLevel::INFO, "Mission started");  @endcode
+   */
+  void log(LogLevel level, std::string_view message) const {
+    Color color = Color::BLUE;
+    switch (level) {
+    case LogLevel::ERROR: color = Color::RED; break;
+    case LogLevel::WARN:  color = Color::YELLOW; break;
+    case LogLevel::INFO:  color = Color::GREEN; break;
+    case LogLevel::DEBUG: color = Color::CYAN; break;
+    default: break;
+    }
+    log(level, color, message);
+  }
+
+  /**
+   * @brief Repeatedly call update() until the machine reaches the given state
+   *
+   * Convenience for the common "run until done" loop that appears in most
+   * examples and integration code. Returns true if the target state was
+   * reached, false if maxUpdates was hit first.
+   *
+   * @param targetState   State to wait for
+   * @param maxUpdates    Maximum number of update() calls (0 = unlimited)
+   * @param sleepMs       Milliseconds to sleep between updates (0 = no sleep)
+   * @return bool True if the target state was reached
+   *
+   * @code
+   * sm.start();
+   * if (!sm.runUntil(DroneState::MISSION_COMPLETE, 200, 50)) { ... }
+   * @endcode
+   */
+  bool runUntil(const StateID &targetState, size_t maxUpdates = 1000,
+                unsigned sleepMs = 0) {
+    for (size_t i = 0; maxUpdates == 0 || i < maxUpdates; ++i) {
+      update();
+      if (getCurrentStateId() == targetState) {
+        return true;
+      }
+      if (sleepMs > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+      }
+    }
+    return false;
+  }
+
+  /**
+   * @brief Run the state machine for a fixed wall-clock duration
+   *
+   * Calls update() in a loop until the given number of seconds elapses.
+   * Uses steady_clock regardless of the machine's injected clock so the
+   * duration is always wall-clock time.
+   *
+   * @param seconds           Duration to run for
+   * @param updateIntervalMs  Milliseconds between update() calls (0 = tight loop)
+   *
+   * @code  sm.runFor(5.0, 100);  // run for 5 seconds at 10 Hz  @endcode
+   */
+  void runFor(double seconds, unsigned updateIntervalMs = 100) {
+    const double start = steadyClockSeconds();
+    while (steadyClockSeconds() - start < seconds) {
+      update();
+      if (updateIntervalMs > 0) {
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(updateIntervalMs));
+      }
+    }
+  }
+
+  /**
+   * @brief Start calling update() on a background thread at a fixed rate
+   *
+   * Spawns a dedicated thread that calls update() every dt seconds. The
+   * thread is joined automatically by stop() and the destructor, so callers
+   * can also simply let the machine go out of scope.
+   *
+   * Must be called after start(). If a run-thread is already active, this
+   * is a no-op.
+   *
+   * @param dt  Update period in seconds (e.g. 0.1 for 10 Hz)
+   *
+   * @code
+   *   sm.start();
+   *   sm.runInThread(0.02);  // 50 Hz in the background
+   *   // ... do other work ...
+   *   sm.stop();              // joins the thread automatically
+   * @endcode
+   */
+  void runInThread(double dt) {
+    if (runThreadRunning.load()) {
+      return;
+    }
+    if (dt <= 0.0) {
+      dt = 0.1; // default to 10 Hz
+    }
+    runThreadRunning.store(true);
+    runThread = std::thread([this, dt]() {
+      using clock = std::chrono::steady_clock;
+      auto period = std::chrono::duration_cast<clock::duration>(
+          std::chrono::duration<double>(dt));
+      auto next = clock::now();
+      while (runThreadRunning.load()) {
+        update();
+        next += period;
+        std::this_thread::sleep_until(next);
+      }
+    });
+  }
+
+  /**
+   * @brief Stop the background update thread if one is running
+   *
+   * Called automatically by stop() and the destructor. Safe to call when
+   * no thread is active.
+   */
+  void stopThread() {
+    if (!runThreadRunning.load()) {
+      return;
+    }
+    runThreadRunning.store(false);
+    if (runThread.joinable()) {
+      runThread.join();
+    }
+  }
 };
+
+// ──────────────────────────────────────────────────────────────────────
+//  sm::make — free helper for bottom-up sub-machine construction
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * @brief Namespace for state machine construction helpers
+ */
+namespace sm {
+/**
+ * @brief Create a heap-allocated StateMachine for use with attachSub().
+ *
+ * Returns a unique_ptr so the machine can be configured fluently and then
+ * moved into a parent via attachSub(). This avoids the nested-lambda and
+ * .template syntax required by withSubStates().
+ *
+ * @code
+ *   auto core = sm::make<CoreState>(CoreState::INIT, "Core");
+ *   core->addState<CoreInitState>(CoreState::INIT, "Init")
+ *       .addState<CoreActiveState>(CoreState::ACTIVE, "Active");
+ *
+ *   system.attachSub(Main::RUNNING, std::move(core));
+ * @endcode
+ */
+template <typename StateID>
+std::unique_ptr<StateMachine<StateID>> make(StateID initial,
+                                            std::string name = "SubMachine") {
+  return std::make_unique<StateMachine<StateID>>(initial, std::move(name));
+}
+} // namespace sm
 
 #endif // ROS_COMMON2_STATE_MACHINE_HPP
