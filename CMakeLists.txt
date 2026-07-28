@@ -38,6 +38,9 @@ target_link_libraries(regions_example StateMachineLib)
 add_executable(nested_example examples/nested_example.cpp)
 target_link_libraries(nested_example StateMachineLib)
 
+add_executable(helpers_example examples/helpers_example.cpp)
+target_link_libraries(helpers_example StateMachineLib)
+
 # Tests
 enable_testing()
 
